@@ -1,0 +1,4 @@
+# dsh-palate bundle layer: mount the accumulated-taste plugin.
+- insert:
+    - id: palate
+      name: 'dsh-palate'

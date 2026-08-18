@@ -1,0 +1,12 @@
+{
+  "name": "dsh-palate",
+  "description": "Accumulated design taste for DSH agents: a growing taste corpus + codified principles.",
+  "version": "0.1.0",
+  "entry": {
+    "name": "dsh-palate",
+    "inject": []
+  },
+  "client": {
+    "platform": "web"
+  }
+}

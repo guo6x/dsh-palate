@@ -1,0 +1,71 @@
+# 🍷 dsh-palate — 会长大的眼
+
+[![ci](https://github.com/guo6x/dsh-palate/actions/workflows/ci.yml/badge.svg)](https://github.com/guo6x/dsh-palate/actions/workflows/ci.yml) [English](README.md) · [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 插件
+
+> **设计审查工具量的是固定的尺；dsh-palate 练的是会长大的眼。**
+
+大多数设计评审插件带一套静态规则，用到天荒地老也一样——用一次和用一万次，判断没区别。dsh-palate 相反：它维护一个**会积累的品味语料库**。你喂进去的每个例子、提炼的每条原则，都会让你 agent 的判断更准。**用得越多，眼越毒。**
+
+## 为什么做这个
+
+品味不是天赋，是**看多了练出来的模式识别**。看好的看坏的看够了，规律自己浮出来。dsh-palate 把这件事变成 agent 真能用的机制：
+
+1. **喂** —— 记下你判过好坏的设计，以及*为什么*
+2. **提炼** —— 反复出现的教训沉淀成原则
+3. **评审** —— 拿积累下来的品味去评新设计，而不是套通用清单
+4. **成长** —— 每个判断会强化它支撑的原则，品味复利滚起来
+
+## agent 得到的工具
+
+| 工具 | 作用 |
+|---|---|
+| `palate_review` | 把积累的品味（原则 + 相关过往例子）组装成上下文，让 agent 基于*学到的*判断做评审 |
+| `palate_add` | 喂一个例子（好/坏/备注 + 原因 + 标签）进语料库——品味长大 |
+| `palate_learn` | 从经验里提炼一条新原则，加进编码品味 |
+| `palate_list` | 浏览积累的语料库 |
+| `palate_principles` | 列出编码原则，按证据数排序 |
+| `palate_stats` | 积累了多少品味：学了多少例子、提炼了多少原则 |
+
+自带 **12 条基础原则** 作为起始品味（层级、对比、字阶、间距节奏、对齐、色板纪律、可供性、反馈、清晰度，还有一条反 AI 套路），开箱即用——然后从这里开始长。
+
+## 原理
+
+```
+palate_add (好/坏 + 为什么)  ──▶  品味语料库 (SQLite + Markdown 镜像)
+palate_learn (新规则)         ──▶  编码原则
+palate_review (一个设计)      ──▶  原则 + 相关例子  ──▶  agent 写有据评审
+        ▲                                                  │
+        └────────────── 判断反向强化原则 ◀─────────────────┘
+```
+
+- **存储**：`node:sqlite`（Node ≥ 22 内置），存 `$DSH_HOME/palate/`，外加人可读的 `taste.md` / `principles.md` 镜像。零运行时依赖。
+- **面板**：可拖拽浮窗展示成长故事——学了多少例子、提炼了多少原则、最近的判断。
+- **配视觉**：先用视觉工具（如 `modlens_read_image`）读截图，再把描述喂给 `palate_review`。
+
+## 说实话
+
+这是**积累式检索 + 编码原则**，不是模型微调。插件提供学到的品味当上下文，*模型*来写真正的评审。这是刻意的：判断保持可审计（你能直接读 `taste.md` 和 `principles.md`），而且随语料库增长而变好——不用重训任何东西。
+
+## 安装
+
+```sh
+dsh plugin --profile web add github:guo6x/dsh-palate
+```
+
+要求：DSH web profile、Node ≥ 22。重启 `dsh web`、刷新页面，侧边栏底部出现 👁️ 按钮。
+
+## 开发
+
+```sh
+pnpm install
+node build.mjs        # esbuild → lib/index.js（宿主 ESM）+ lib/client.js（ModuleLoader 包）
+node tests/smoke.mjs  # 17 项纯逻辑检查（无需浏览器）
+```
+
+MIT 协议。欢迎提想法和例子，开 issue。
+
+## 已知限制
+
+- **插件本身不做语义匹配** —— 主题与过往例子的相关性基于标签/关键词，更深的推理由模型基于组装好的上下文完成。
+- **Markdown 镜像在 v0.1 是只读导出**（人工编辑后合并回库在计划中）。
+- **视觉靠外援** —— 配一个视觉工具来评审截图。
