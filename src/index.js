@@ -35,6 +35,7 @@ export function apply(ctx) {
         try {
           if (suffix === '/stats') sendJson(res, 200, store.stats())
           else if (suffix === '/principles') sendJson(res, 200, store.listPrinciples())
+          else if (suffix === '/effectiveness') sendJson(res, 200, store.listEffectiveness())
           else if (suffix === '/recent') sendJson(res, 200, store.listExamples({ limit: 12 }))
           else sendJson(res, 404, { error: 'no such endpoint' })
         } catch (error) {
@@ -69,16 +70,16 @@ export function apply(ctx) {
     const defs = [
       define(
         'palate_review',
-        'Assemble the agent\'s accumulated design taste as context to critique a design. Returns the codified principles plus relevant past examples (good to emulate, bad to avoid), with guidance. YOU then write the actual critique grounded in this learned taste. Feed it a description of the design; for a screenshot, read it with a vision tool first and pass the description.',
+        'Create a tracked design review from the agent\'s accumulated taste. Returns a review_id, codified principles, relevant past examples (good to emulate, bad to avoid), and guidance. YOU then write the actual critique grounded in this learned taste. After the user responds, call palate_feedback with the review_id to record whether the advice helped.',
         obj({
           subject: str('Description of the design/UI to critique (or the path/url of an image you have already described).'),
           tag: str('Optional tag to focus which past examples to draw on.'),
         }, ['subject']),
-        async args => store.reviewContext(args.subject, { tag: args.tag }),
+        async args => store.createReview(args.subject, { tag: args.tag }),
         value => [{
           type: 'text',
           text: [
-            `Review target: ${value.subject}`,
+            `Review #${value.review_id}: ${value.subject}`,
             '',
             'Codified taste (apply each):',
             ...value.principles.map(p => `  - ${p}`),
@@ -87,8 +88,29 @@ export function apply(ctx) {
             ...value.relevant_examples.map(e => `  - [${e.verdict}] ${e.ref}${e.reason ? ' — ' + e.reason : ''}${e.matched_terms?.length ? ` (matched: ${e.matched_terms.join(', ')})` : ''}`),
             '',
             value.guidance,
+            '',
+            `After the user evaluates this critique, call palate_feedback with review_id ${value.review_id}. Use exact principle text from palate_principles for accepted_principles/rejected_principles.`,
           ].join('\n'),
         }],
+      ),
+      define(
+        'palate_feedback',
+        'Close the loop on a tracked palate_review after the user evaluates the critique. Record whether it was helpful, which reviewed principles were accepted or rejected, and an optional note. Accepted principles gain evidence; effectiveness stays auditable instead of treating more examples as automatically better.',
+        obj({
+          review_id: { type: 'number', description: 'The review_id returned by palate_review.' },
+          outcome: str("Overall outcome: 'helpful' | 'mixed' | 'unhelpful'."),
+          accepted_principles: { type: 'array', items: { type: 'string' }, description: 'Optional exact principle strings from palate_principles that helped.' },
+          rejected_principles: { type: 'array', items: { type: 'string' }, description: 'Optional exact principle strings from palate_principles that did not help.' },
+          note: str('Optional user feedback or a concise explanation of the outcome.'),
+        }, ['review_id', 'outcome']),
+        async args => store.recordFeedback({
+          reviewId: args.review_id,
+          outcome: args.outcome,
+          acceptedPrinciples: args.accepted_principles ?? [],
+          rejectedPrinciples: args.rejected_principles ?? [],
+          note: args.note ?? '',
+        }),
+        value => [{ type: 'text', text: `Recorded ${value.outcome} feedback for review #${value.review_id}: ${value.accepted_principles.length} accepted, ${value.rejected_principles.length} rejected${value.reinforced ? `; reinforced ${value.reinforced} principle(s)` : ''}. Palate now has ${value.stats.feedback} feedback record(s).` }],
       ),
       define(
         'palate_add',
@@ -137,11 +159,20 @@ export function apply(ctx) {
         value => [{ type: 'text', text: value.principles.map(p => `[${p.category}] ${p.principle} (evidence ${p.evidence})`).join('\n') }],
       ),
       define(
+        'palate_effectiveness',
+        'Show which design principles have actually helped across recorded review feedback, separate from their raw evidence count.',
+        obj({}),
+        async () => ({ principles: store.listEffectiveness(), stats: store.stats() }),
+        value => [{ type: 'text', text: value.principles.some(principle => principle.feedback > 0)
+          ? value.principles.filter(principle => principle.feedback > 0).map(principle => `[${principle.category}] ${principle.principle} — ${principle.accepted} accepted / ${principle.rejected} rejected (${principle.acceptance_rate}% acceptance; evidence ${principle.evidence})`).join('\n')
+          : 'No review feedback yet — call palate_feedback after a user evaluates a palate_review.' }],
+      ),
+      define(
         'palate_stats',
-        'Show how much taste the agent has accumulated: examples studied (good/bad), principles distilled.',
+        'Show how much taste the agent has accumulated and whether reviews have been evaluated: examples studied, principles distilled, reviews, and helpful/mixed/unhelpful feedback.',
         obj({}),
         async () => store.stats(),
-        value => [{ type: 'text', text: `Palate: ${value.examples} examples (${value.good} good, ${value.bad} bad, ${value.notes} notes), ${value.principles} principles.` }],
+        value => [{ type: 'text', text: `Palate: ${value.examples} examples (${value.good} good, ${value.bad} bad, ${value.notes} notes), ${value.principles} principles, ${value.reviews} tracked reviews, ${value.feedback} feedback (${value.helpful} helpful, ${value.mixed} mixed, ${value.unhelpful} unhelpful).` }],
       ),
     ]
     for (const def of defs) {

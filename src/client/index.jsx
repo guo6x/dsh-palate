@@ -32,6 +32,7 @@ function PalatePanel() {
   const [open, setOpen] = useState(moduleOpen())
   const [stats, setStats] = useState(null)
   const [principles, setPrinciples] = useState([])
+  const [effectiveness, setEffectiveness] = useState([])
   const [recent, setRecent] = useState([])
   const [pos, setPos] = useState({ x: null, y: null })
   const [drag, setDrag] = useState(null)
@@ -39,10 +40,11 @@ function PalatePanel() {
   useEffect(() => {
     let alive = true
     const load = async () => {
-      const [s, p, r] = await Promise.all([getJson('/palate/stats'), getJson('/palate/principles'), getJson('/palate/recent')])
+      const [s, p, e, r] = await Promise.all([getJson('/palate/stats'), getJson('/palate/principles'), getJson('/palate/effectiveness'), getJson('/palate/recent')])
       if (!alive) return
       if (s) setStats(s)
       if (Array.isArray(p)) setPrinciples(p)
+      if (Array.isArray(e)) setEffectiveness(e)
       if (Array.isArray(r)) setRecent(r)
     }
     load()
@@ -73,16 +75,25 @@ function PalatePanel() {
       ? React.createElement('div', { style: statStyle },
           React.createElement('div', { style: chipStyle },
             React.createElement('div', { style: bigStyle }, stats.examples),
-            React.createElement('div', { style: { opacity: 0.6 } }, `例子 ${stats.good}好/${stats.bad}坏`)),
+          React.createElement('div', { style: { opacity: 0.6 } }, `例子 ${stats.good}好/${stats.bad}坏`)),
           React.createElement('div', { style: chipStyle },
             React.createElement('div', { style: bigStyle }, stats.principles),
-            React.createElement('div', { style: { opacity: 0.6 } }, '原则')))
+            React.createElement('div', { style: { opacity: 0.6 } }, `原则 · ${stats.feedback ?? 0}反馈`)),
+          React.createElement('div', { style: chipStyle },
+            React.createElement('div', { style: bigStyle }, stats.reviews ?? 0),
+            React.createElement('div', { style: { opacity: 0.6 } }, `评审 ${stats.helpful ?? 0}有效`)))
       : null,
     principles.length
       ? React.createElement('div', { style: listStyle },
           React.createElement('div', { style: { fontWeight: 700, marginBottom: 2 } }, '当前品味（按证据排序）'),
           principles.slice(0, 6).map(p =>
             React.createElement('div', { key: p.id }, `· [${p.category}] ${p.principle} (${p.evidence})`)))
+      : null,
+    effectiveness.some(item => item.feedback > 0)
+      ? React.createElement('div', { style: listStyle },
+          React.createElement('div', { style: { fontWeight: 700, marginBottom: 2 } }, '反馈效果（采纳 / 拒绝）'),
+          effectiveness.filter(item => item.feedback > 0).slice(0, 4).map(item =>
+            React.createElement('div', { key: item.id }, `· [${item.category}] ${item.principle} — ${item.accepted}/${item.rejected}`)))
       : null,
     recent.length
       ? React.createElement('div', { style: listStyle },

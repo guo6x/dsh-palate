@@ -2,6 +2,14 @@
 
 All notable changes to dsh-palate.
 
+## [0.3.0] - 2026-08-25
+
+### Added
+
+- Tracked `palate_review` records with a `review_id` and a snapshot of the principles and examples used as evidence.
+- `palate_feedback` records one helpful/mixed/unhelpful outcome per review, plus accepted and rejected reviewed principles. Only accepted principles gain evidence.
+- `palate_effectiveness`, a loopback `/palate/effectiveness` endpoint, `feedback.md`, and the growth panel expose real acceptance/rejection history separately from raw corpus size.
+
 ## [0.2.0] - 2026-08-25
 
 ### Changed

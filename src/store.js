@@ -32,6 +32,8 @@ export const SEED_PRINCIPLES = [
 ]
 
 const VERDICTS = new Set(['good', 'bad', 'note'])
+const REVIEW_OUTCOMES = new Set(['helpful', 'mixed', 'unhelpful'])
+const MAX_FEEDBACK_PRINCIPLES = 30
 
 /**
  * A dependency-free local tokenizer. Word tokens cover alphabetic languages;
@@ -82,6 +84,30 @@ export class PalateStore {
         evidence INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now'))
       );
+      CREATE TABLE IF NOT EXISTS reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT NOT NULL,
+        tag TEXT,
+        principles TEXT NOT NULL,
+        examples TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS review_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        review_id INTEGER NOT NULL UNIQUE,
+        outcome TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        FOREIGN KEY (review_id) REFERENCES reviews(id)
+      );
+      CREATE TABLE IF NOT EXISTS review_feedback_items (
+        feedback_id INTEGER NOT NULL,
+        principle TEXT NOT NULL,
+        verdict TEXT NOT NULL,
+        PRIMARY KEY (feedback_id, principle),
+        FOREIGN KEY (feedback_id) REFERENCES review_feedback(id)
+      );
+      PRAGMA foreign_keys = ON;
     `)
     const { c } = this.db.prepare('SELECT COUNT(*) AS c FROM principles').get()
     if (c === 0) {
@@ -145,7 +171,87 @@ export class PalateStore {
     const good = this.db.prepare("SELECT COUNT(*) AS c FROM taste WHERE verdict='good'").get().c
     const bad = this.db.prepare("SELECT COUNT(*) AS c FROM taste WHERE verdict='bad'").get().c
     const principles = this.db.prepare('SELECT COUNT(*) AS c FROM principles').get().c
-    return { examples, good, bad, notes: examples - good - bad, principles }
+    const reviews = this.db.prepare('SELECT COUNT(*) AS c FROM reviews').get().c
+    const feedback = this.db.prepare('SELECT COUNT(*) AS c FROM review_feedback').get().c
+    const helpful = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='helpful'").get().c
+    const mixed = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='mixed'").get().c
+    const unhelpful = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='unhelpful'").get().c
+    return { examples, good, bad, notes: examples - good - bad, principles, reviews, feedback, helpful, mixed, unhelpful }
+  }
+
+  /** Persist the exact evidence supplied for a review, then give the caller an ID to close the loop later. */
+  createReview(subject, { tag, limit = 12 } = {}) {
+    if (typeof subject !== 'string' || subject.trim().length === 0) throw new Error('palate: review subject is required')
+    const context = this.reviewContext(subject, { tag, limit })
+    const principles = this.listPrinciples().map(principle => principle.principle)
+    const examples = context.relevant_examples.map(example => ({ ref: example.ref, verdict: example.verdict }))
+    const res = this.db.prepare('INSERT INTO reviews (subject, tag, principles, examples) VALUES (?, ?, ?, ?)')
+      .run(subject, typeof tag === 'string' && tag.length > 0 ? tag : null, JSON.stringify(principles), JSON.stringify(examples))
+    return { review_id: Number(res.lastInsertRowid), principle_names: principles, ...context }
+  }
+
+  /** Record one outcome for a review and reinforce only principles the user says helped. */
+  recordFeedback({ reviewId, outcome, acceptedPrinciples = [], rejectedPrinciples = [], note = '' }) {
+    const id = Number(reviewId)
+    if (!Number.isInteger(id) || id <= 0) throw new Error('palate: review_id must be a positive integer')
+    if (!REVIEW_OUTCOMES.has(outcome)) throw new Error(`palate: outcome must be one of ${[...REVIEW_OUTCOMES].join(', ')}`)
+    if (typeof note !== 'string' || note.length > 4000) throw new Error('palate: note must be a string up to 4000 characters')
+    const accepted = stringList(acceptedPrinciples, 'accepted_principles')
+    const rejected = stringList(rejectedPrinciples, 'rejected_principles')
+    const duplicated = accepted.filter(principle => rejected.includes(principle))
+    if (duplicated.length > 0) throw new Error(`palate: a principle cannot be both accepted and rejected: ${duplicated.join(', ')}`)
+
+    const review = this.db.prepare('SELECT principles FROM reviews WHERE id = ?').get(id)
+    if (review === undefined) throw new Error(`palate: review #${id} does not exist`)
+    const allowed = new Set(safeParse(review.principles))
+    const unknown = [...accepted, ...rejected].filter(principle => !allowed.has(principle))
+    if (unknown.length > 0) throw new Error(`palate: feedback principles must come from review #${id}: ${unknown.join(', ')}`)
+    const existing = this.db.prepare('SELECT id FROM review_feedback WHERE review_id = ?').get(id)
+    if (existing !== undefined) throw new Error(`palate: review #${id} already has feedback`)
+
+    let feedbackId
+    this.db.exec('BEGIN')
+    try {
+      const res = this.db.prepare('INSERT INTO review_feedback (review_id, outcome, note) VALUES (?, ?, ?)').run(id, outcome, note)
+      feedbackId = Number(res.lastInsertRowid)
+      const insert = this.db.prepare('INSERT INTO review_feedback_items (feedback_id, principle, verdict) VALUES (?, ?, ?)')
+      for (const principle of accepted) insert.run(feedbackId, principle, 'accepted')
+      for (const principle of rejected) insert.run(feedbackId, principle, 'rejected')
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+    const reinforced = this.reinforce(accepted)
+    if (reinforced === 0) this.writeMirrors()
+    return {
+      feedback_id: feedbackId,
+      review_id: id,
+      outcome,
+      accepted_principles: accepted,
+      rejected_principles: rejected,
+      reinforced,
+      stats: this.stats(),
+    }
+  }
+
+  /** Per-principle adoption history from feedback, separate from raw evidence count. */
+  listEffectiveness({ limit = 50 } = {}) {
+    const rows = this.db.prepare(`
+      SELECT p.id, p.principle, p.category, p.evidence,
+        COUNT(i.principle) AS feedback,
+        COALESCE(SUM(CASE WHEN i.verdict = 'accepted' THEN 1 ELSE 0 END), 0) AS accepted,
+        COALESCE(SUM(CASE WHEN i.verdict = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected
+      FROM principles p
+      LEFT JOIN review_feedback_items i ON i.principle = p.principle
+      GROUP BY p.id
+      ORDER BY feedback DESC, accepted DESC, rejected ASC, p.evidence DESC, p.id ASC
+      LIMIT ?
+    `).all(Math.max(1, Math.min(100, Number(limit) || 50)))
+    return rows.map(row => ({
+      ...row,
+      acceptance_rate: row.feedback > 0 ? Math.round((row.accepted / row.feedback) * 100) : null,
+    }))
   }
 
   /**
@@ -208,6 +314,14 @@ export class PalateStore {
     const plines = ['# principles.md — dsh-palate codified taste', '', '<!-- Read-only mirror of the principles. -->', '']
     for (const p of ps) plines.push(`- [${p.category}] ${p.principle} _(evidence ${p.evidence})_`)
     writeFileSync(join(this.dir, 'principles.md'), plines.join('\n'))
+
+    const effectiveness = this.listEffectiveness().filter(item => item.feedback > 0)
+    const flines = ['# feedback.md — dsh-palate review outcomes', '', '<!-- Read-only mirror of review feedback. -->', '']
+    if (effectiveness.length === 0) flines.push('No review feedback recorded yet.')
+    for (const item of effectiveness) {
+      flines.push(`- [${item.category}] ${item.principle} — ${item.accepted} accepted / ${item.rejected} rejected (${item.acceptance_rate}% acceptance)`)
+    }
+    writeFileSync(join(this.dir, 'feedback.md'), flines.join('\n'))
   }
 
   close() {
@@ -217,4 +331,18 @@ export class PalateStore {
 
 function safeParse(s) {
   try { const v = JSON.parse(s); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+
+function stringList(values, name) {
+  if (!Array.isArray(values)) throw new Error(`palate: ${name} must be an array`)
+  if (values.length > MAX_FEEDBACK_PRINCIPLES) throw new Error(`palate: ${name} accepts at most ${MAX_FEEDBACK_PRINCIPLES} principles`)
+  const output = []
+  for (const value of values) {
+    if (typeof value !== 'string' || value.trim().length === 0 || value.length > 500) {
+      throw new Error(`palate: ${name} must contain non-empty strings up to 500 characters`)
+    }
+    const principle = value.trim()
+    if (!output.includes(principle)) output.push(principle)
+  }
+  return output
 }

@@ -1,6 +1,7 @@
 /**
  * dsh-palate smoke test — pure logic, no browser needed (CI runs on ubuntu).
- * Exercises the PalateStore: seed, add, list, learn, reinforce, review, stats, mirrors.
+ * Exercises the PalateStore: seed, add, list, learn, reinforce, tracked review,
+ * feedback, effectiveness, stats, and mirrors.
  * Run: node tests/smoke.mjs
  */
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs'
@@ -68,13 +69,37 @@ try {
   check('search: excludes unrelated example without a tag filter', ranked.every(example => example.ref !== 'generic ai landing'), JSON.stringify(ranked))
   check('search: exposes matching evidence', ranked[0]?.matched_terms.includes('dashboard'), JSON.stringify(ranked[0]?.matched_terms))
 
+  // A review creates an auditable record; feedback closes the loop and changes effectiveness separately from corpus size.
+  const tracked = store.createReview('a dark-mode dashboard', { tag: 'landing' })
+  check('review: creates a tracked id', tracked.review_id >= 1 && tracked.principle_names.length === SEED_PRINCIPLES.length + 1, JSON.stringify({ id: tracked.review_id, principles: tracked.principle_names.length }))
+  const rejectedPrinciple = 'Never center-align body text in dense UIs.'
+  const evidenceBeforeFeedback = store.listPrinciples().find(p => p.principle === target).evidence
+  const feedback = store.recordFeedback({
+    reviewId: tracked.review_id,
+    outcome: 'helpful',
+    acceptedPrinciples: [target],
+    rejectedPrinciples: [rejectedPrinciple],
+    note: 'The hierarchy advice was actionable; the typography rule did not apply.',
+  })
+  check('feedback: records reviewed outcome', feedback.outcome === 'helpful' && feedback.reinforced === 1, JSON.stringify(feedback))
+  check('feedback: reinforces accepted principle', store.listPrinciples().find(p => p.principle === target).evidence === evidenceBeforeFeedback + 1)
+  const effectiveness = store.listEffectiveness()
+  const targetEffect = effectiveness.find(p => p.principle === target)
+  const rejectedEffect = effectiveness.find(p => p.principle === rejectedPrinciple)
+  check('feedback: tracks accepted/rejected effectiveness', targetEffect?.accepted === 1 && rejectedEffect?.rejected === 1, JSON.stringify({ targetEffect, rejectedEffect }))
+  let duplicateFeedback = false
+  try { store.recordFeedback({ reviewId: tracked.review_id, outcome: 'helpful' }) } catch { duplicateFeedback = true }
+  check('feedback: review only closes once', duplicateFeedback)
+
   // stats
   const stats = store.stats()
-  check('stats: counts', stats.examples === 2 && stats.good === 1 && stats.bad === 1 && stats.principles === SEED_PRINCIPLES.length + 1, JSON.stringify(stats))
+  check('stats: counts', stats.examples === 2 && stats.good === 1 && stats.bad === 1 && stats.principles === SEED_PRINCIPLES.length + 1 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1, JSON.stringify(stats))
 
   // mirror content reflects corpus
   const tasteMd = readFileSync(join(dir, 'taste.md'), 'utf8')
   check('mirror: taste.md lists example', tasteMd.includes('stripe.com homepage'))
+  const feedbackMd = readFileSync(join(dir, 'feedback.md'), 'utf8')
+  check('mirror: feedback.md lists effectiveness', feedbackMd.includes(target) && feedbackMd.includes('1 accepted / 0 rejected'))
 } catch (error) {
   failed++
   console.error('FATAL', error)
