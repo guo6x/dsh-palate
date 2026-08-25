@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react'
 
 export const name = 'dsh-palate'
-export const inject = []
+export const inject = ['slots']
 
 const panelStyle = {
   position: 'fixed', top: '4.5rem', left: '20rem', zIndex: 1200, width: 330,
@@ -29,13 +29,12 @@ async function getJson(path) {
 }
 
 function PalatePanel() {
-  const [open, setOpen] = useState(moduleOpen())
+  const open = useModuleOpen()
   const [stats, setStats] = useState(null)
   const [principles, setPrinciples] = useState([])
   const [effectiveness, setEffectiveness] = useState([])
   const [recent, setRecent] = useState([])
   const [pos, setPos] = useState({ x: null, y: null })
-  const [drag, setDrag] = useState(null)
 
   useEffect(() => {
     let alive = true
@@ -54,10 +53,11 @@ function PalatePanel() {
 
   if (!open) return null
 
-  const onPointerDown = e => {
-    setDrag({ sx: e.clientX, sy: e.clientY, bx: pos.x ?? 0, by: pos.y ?? 0 })
-    const move = ev => setPos(d => ({ x: drag.bx + ev.clientX - drag.sx, y: drag.by + ev.clientY - drag.sy }))
-    const up = () => { setDrag(null); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
+  const onPointerDown = event => {
+    if (event.button !== 0) return
+    const start = { x: event.clientX, y: event.clientY, left: pos.x ?? 0, top: pos.y ?? 0 }
+    const move = ev => setPos({ x: start.left + ev.clientX - start.x, y: start.top + ev.clientY - start.y })
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
   }
@@ -65,8 +65,8 @@ function PalatePanel() {
   const style = pos.x === null ? panelStyle : { ...panelStyle, left: pos.x, top: pos.y }
   const verdictColor = v => (v === 'good' ? '#7fd48a' : v === 'bad' ? '#e08a8a' : '#c9c2d0')
 
-  return React.createElement('div', { style, onPointerDown },
-    React.createElement('div', { style: barStyle },
+  return React.createElement('div', { style },
+    React.createElement('div', { style: barStyle, onPointerDown },
       React.createElement('span', { style: { fontSize: 13, fontWeight: 700 } }, '🍷 dsh-palate'),
       React.createElement('span', { style: { flex: 1, fontSize: 11, opacity: 0.6 } }, '会长大的眼'),
       React.createElement('button', { style: btnStyle, onClick: () => closePanel(), title: '收起' }, '×'),
@@ -106,11 +106,11 @@ function PalatePanel() {
 }
 
 function PalateButton() {
-  const [open, setOpen] = useState(moduleOpen())
+  const open = useModuleOpen()
   return React.createElement('button', {
     title: '品味面板',
     style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 },
-    onClick: () => { const next = !open; setModuleOpen(next); setOpen(next) },
+    onClick: () => setModuleOpen(!open),
   }, open ? '🍷' : '👁️')
 }
 
@@ -120,6 +120,15 @@ const _subs = new Set()
 function moduleOpen() { return _open }
 function setModuleOpen(v) { _open = v; for (const s of _subs) s() }
 function closePanel() { setModuleOpen(false) }
+function useModuleOpen() {
+  const [open, setOpen] = useState(moduleOpen())
+  useEffect(() => {
+    const update = () => setOpen(moduleOpen())
+    _subs.add(update)
+    return () => _subs.delete(update)
+  }, [])
+  return open
+}
 
 export function apply(ctx) {
   const slots = ctx.slots

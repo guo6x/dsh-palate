@@ -2,6 +2,14 @@
 
 All notable changes to dsh-palate.
 
+## [0.3.2] - 2026-08-25
+
+### Fixed
+
+- Declare the client-side `slots` dependency before registering the sidebar button and overlay, so the DSH Web UI loads the palate panel instead of rejecting the plugin at startup.
+- Make the sidebar button and overlay subscribe to the same open state; dragging now uses the title bar only and calculates from the pointer-down position.
+- Add a generated-client contract test that verifies the injection declaration, both slot registrations, and shared panel state.
+
 ## [0.3.1] - 2026-08-25
 
 ### Fixed
