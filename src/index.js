@@ -84,7 +84,7 @@ export function apply(ctx) {
             ...value.principles.map(p => `  - ${p}`),
             '',
             `Relevant examples (${value.relevant_examples.length}):`,
-            ...value.relevant_examples.map(e => `  - [${e.verdict}] ${e.ref}${e.reason ? ' — ' + e.reason : ''}`),
+            ...value.relevant_examples.map(e => `  - [${e.verdict}] ${e.ref}${e.reason ? ' — ' + e.reason : ''}${e.matched_terms?.length ? ` (matched: ${e.matched_terms.join(', ')})` : ''}`),
             '',
             value.guidance,
           ].join('\n'),

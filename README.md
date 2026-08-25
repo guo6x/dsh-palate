@@ -39,6 +39,7 @@ palate_review (a design)      ──▶  principles + relevant examples  ──�
 ```
 
 - **Storage**: `node:sqlite` (built into Node ≥ 22) at `$DSH_HOME/palate/`, plus human-readable `taste.md` / `principles.md` mirrors. Zero runtime dependencies.
+- **Retrieval**: a review ranks examples against the current description using local words, tags, and Chinese word fragments; when no precedent is relevant, it leaves the evidence empty instead of padding with recent entries.
 - **The panel**: a draggable overlay shows the growth story — examples studied, principles distilled, recent judgments.
 - **Vision pairing**: feed it screenshots by reading them with a vision tool first (e.g. `modlens_read_image`), then pass the description to `palate_review`.
 
@@ -59,13 +60,13 @@ Requirements: DeepSeek Harness web profile, Node ≥ 22. Restart `dsh web`, refr
 ```sh
 pnpm install
 node build.mjs        # esbuild → lib/index.js (host ESM) + lib/client.js (ModuleLoader bundle)
-node tests/smoke.mjs  # 17 pure-logic checks (no browser needed)
+node tests/smoke.mjs  # pure-logic checks (no browser needed)
 ```
 
 MIT licensed. Ideas and examples welcome — open an issue.
 
 ## Known limitations
 
-- **No semantic matching in the plugin itself** — relevance between a subject and past examples is tag/keyword based; the model does the deeper reasoning from the assembled context.
+- **No embedding-based semantic matching in the plugin itself** — it retrieves locally by tags, words, and Chinese word fragments; the model does the deeper reasoning from the assembled context.
 - **Markdown mirrors are read-only exports** for v0.1 (human edit-and-merge-back is planned).
 - **Vision is delegated** — pair with a vision tool to review screenshots.

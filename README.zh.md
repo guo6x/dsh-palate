@@ -39,6 +39,7 @@ palate_review (一个设计)      ──▶  原则 + 相关例子  ──▶  a
 ```
 
 - **存储**：`node:sqlite`（Node ≥ 22 内置），存 `$DSH_HOME/palate/`，外加人可读的 `taste.md` / `principles.md` 镜像。零运行时依赖。
+- **检索**：评审时按当前设计描述中的词、标签与中文词组对案例排序；没有足够相关的先例时，会明确留空而不是拿最新案例凑数。
 - **面板**：可拖拽浮窗展示成长故事——学了多少例子、提炼了多少原则、最近的判断。
 - **配视觉**：先用视觉工具（如 `modlens_read_image`）读截图，再把描述喂给 `palate_review`。
 
@@ -59,13 +60,13 @@ dsh plugin --profile web add github:guo6x/dsh-palate
 ```sh
 pnpm install
 node build.mjs        # esbuild → lib/index.js（宿主 ESM）+ lib/client.js（ModuleLoader 包）
-node tests/smoke.mjs  # 17 项纯逻辑检查（无需浏览器）
+node tests/smoke.mjs  # 纯逻辑检查（无需浏览器）
 ```
 
 MIT 协议。欢迎提想法和例子，开 issue。
 
 ## 已知限制
 
-- **插件本身不做语义匹配** —— 主题与过往例子的相关性基于标签/关键词，更深的推理由模型基于组装好的上下文完成。
+- **插件本身不做 embedding 语义匹配** —— 它在本地按标签、关键词与中文词组检索案例；更深的推理由模型基于组装好的上下文完成。
 - **Markdown 镜像在 v0.1 是只读导出**（人工编辑后合并回库在计划中）。
 - **视觉靠外援** —— 配一个视觉工具来评审截图。

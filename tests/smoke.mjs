@@ -25,7 +25,7 @@ try {
   check('seed: mirrors written', existsSync(join(dir, 'principles.md')) && existsSync(join(dir, 'taste.md')))
 
   // add examples
-  const good = store.addExample({ ref: 'stripe.com homepage', verdict: 'good', reason: 'clear hierarchy, restrained palette', tags: ['landing', 'light'] })
+  const good = store.addExample({ ref: 'stripe.com homepage', verdict: 'good', reason: 'clear hierarchy, restrained palette, compact dashboard navigation', tags: ['landing', 'light', 'dashboard'] })
   const bad = store.addExample({ ref: 'generic ai landing', verdict: 'bad', reason: 'gradient-hero + three-cards boilerplate', tags: ['landing', 'ai-slop'] })
   check('add: good example id', good.id >= 1, `id=${good.id}`)
   check('add: bad example id', bad.id > good.id, `id=${bad.id}`)
@@ -62,6 +62,11 @@ try {
   check('review: has principles', rc.principles.length === SEED_PRINCIPLES.length + 1)
   check('review: pulls relevant examples', rc.relevant_examples.length === 2)
   check('review: has guidance', typeof rc.guidance === 'string' && rc.guidance.length > 0)
+
+  const ranked = store.searchExamples('Review a dark dashboard navigation with dense data tables')
+  check('search: ranks target-relevant example first', ranked[0]?.ref === 'stripe.com homepage', JSON.stringify(ranked[0]))
+  check('search: excludes unrelated example without a tag filter', ranked.every(example => example.ref !== 'generic ai landing'), JSON.stringify(ranked))
+  check('search: exposes matching evidence', ranked[0]?.matched_terms.includes('dashboard'), JSON.stringify(ranked[0]?.matched_terms))
 
   // stats
   const stats = store.stats()

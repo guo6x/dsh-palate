@@ -33,6 +33,29 @@ export const SEED_PRINCIPLES = [
 
 const VERDICTS = new Set(['good', 'bad', 'note'])
 
+/**
+ * A dependency-free local tokenizer. Word tokens cover alphabetic languages;
+ * Han bigrams make short Chinese design descriptions useful retrieval queries
+ * without requiring embeddings or an online model.
+ */
+function tokensOf(value) {
+  const text = String(value ?? '').normalize('NFKC').toLocaleLowerCase()
+  const tokens = new Set(text.match(/[\p{L}\p{N}_-]{2,}/gu) ?? [])
+  for (const run of text.match(/[\p{Script=Han}]+/gu) ?? []) {
+    if (run.length === 1) tokens.add(run)
+    for (let i = 0; i < run.length - 1; i++) tokens.add(run.slice(i, i + 2))
+  }
+  return tokens
+}
+
+function searchableText(example) {
+  return [example.ref, example.reason, ...(example.tags ?? []), example.source]
+    .filter(Boolean)
+    .join('\n')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+}
+
 export class PalateStore {
   constructor(dir) {
     this.dir = dir
@@ -126,19 +149,47 @@ export class PalateStore {
   }
 
   /**
+   * Rank past examples against the concrete design currently under review.
+   * `tag` remains a hard user-directed filter; without it, unrelated recent
+   * entries are deliberately omitted instead of pretending to be evidence.
+   */
+  searchExamples(subject, { tag, limit = 12 } = {}) {
+    const query = String(subject ?? '').normalize('NFKC').toLocaleLowerCase().trim()
+    const queryTokens = tokensOf(query)
+    const examples = this.listExamples({ tag, limit: 1000 })
+    const ranked = examples.map(example => {
+      const text = searchableText(example)
+      const exampleTokens = tokensOf(text)
+      const terms = [...queryTokens].filter(token => exampleTokens.has(token))
+      const tagTerms = new Set((example.tags ?? []).flatMap(value => [...tokensOf(value)]))
+      const score = terms.reduce((sum, token) => sum + (tagTerms.has(token) ? 3 : 1), 0)
+        + (query.length >= 8 && text.includes(query) ? 4 : 0)
+        + (tag && example.tags.includes(tag) ? 2 : 0)
+      return { ...example, score, matched_terms: terms.slice(0, 12) }
+    })
+    const relevant = tag ? ranked : ranked.filter(example => example.score > 0)
+    return relevant
+      .sort((left, right) => right.score - left.score || right.id - left.id)
+      .slice(0, Math.max(1, Math.min(50, Number(limit) || 12)))
+  }
+
+  /**
    * Assemble the learned taste as context for a review. The plugin supplies this
    * accumulated knowledge; the model renders the critique grounded in it.
    */
   reviewContext(subject, { tag, limit = 12 } = {}) {
     const principles = this.listPrinciples().map(p => `[${p.category}] ${p.principle} (evidence ${p.evidence})`)
-    const relevant = this.listExamples({ tag, limit }).map(e => ({
+    const relevant = this.searchExamples(subject, { tag, limit }).map(e => ({
       ref: e.ref, verdict: e.verdict, reason: e.reason, tags: e.tags,
+      score: e.score, matched_terms: e.matched_terms,
     }))
     return {
       subject,
       principles,
       relevant_examples: relevant,
-      guidance: 'Critique the subject against each principle. Cite specific relevant examples (good ones to emulate, bad ones to avoid). Be concrete: name what to change and why.',
+      guidance: relevant.length > 0
+        ? 'Critique the subject against each principle. Cite specific relevant examples (good ones to emulate, bad ones to avoid). Be concrete: name what to change and why.'
+        : 'Critique the subject against each principle. No sufficiently relevant prior examples were found, so do not invent precedent; say what evidence would make the palate more specific.',
     }
   }
 
