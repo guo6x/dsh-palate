@@ -2,6 +2,12 @@
 
 All notable changes to dsh-palate.
 
+## [0.3.1] - 2026-08-25
+
+### Fixed
+
+- Commit the built `lib/` entrypoints required by GitHub/path installations, so the published plugin always contains the files declared by `main` and `exports`.
+
 ## [0.3.0] - 2026-08-25
 
 ### Added
