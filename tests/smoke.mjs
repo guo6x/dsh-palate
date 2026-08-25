@@ -7,7 +7,7 @@
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PalateStore, SEED_PRINCIPLES } from '../src/store.js'
+import { PalateStore, SEED_EXAMPLES, SEED_PRINCIPLES } from '../src/store.js'
 
 let failed = 0
 const check = (label, cond, extra = '') => {
@@ -23,6 +23,8 @@ try {
   // seed
   const seeded = store.listPrinciples()
   check('seed: principles loaded', seeded.length === SEED_PRINCIPLES.length, `${seeded.length} principles`)
+  const starterExamples = store.listExamples()
+  check('seed: examples loaded for first review', starterExamples.length === SEED_EXAMPLES.length && starterExamples.every(example => example.source === 'dsh-palate starter palate'), `${starterExamples.length} examples`)
   check('seed: mirrors written', existsSync(join(dir, 'principles.md')) && existsSync(join(dir, 'taste.md')))
 
   // add examples
@@ -38,9 +40,9 @@ try {
 
   // list + filter
   const all = store.listExamples()
-  check('list: returns both', all.length === 2, `${all.length}`)
+  check('list: returns starter and user examples', all.length === SEED_EXAMPLES.length + 2, `${all.length}`)
   const goods = store.listExamples({ verdict: 'good' })
-  check('list: filter by verdict', goods.length === 1 && goods[0].verdict === 'good')
+  check('list: filter by verdict', goods.length === SEED_EXAMPLES.filter(example => example.verdict === 'good').length + 1 && goods.every(example => example.verdict === 'good'))
   const tagged = store.listExamples({ tag: 'ai-slop' })
   check('list: filter by tag', tagged.length === 1 && tagged[0].ref === 'generic ai landing')
 
@@ -72,6 +74,8 @@ try {
   // A review creates an auditable record; feedback closes the loop and changes effectiveness separately from corpus size.
   const tracked = store.createReview('a dark-mode dashboard', { tag: 'landing' })
   check('review: creates a tracked id', tracked.review_id >= 1 && tracked.principle_names.length === SEED_PRINCIPLES.length + 1, JSON.stringify({ id: tracked.review_id, principles: tracked.principle_names.length }))
+  const recentReviews = store.listReviews()
+  check('review: evidence is visible in recent reviews', recentReviews[0]?.review_id === tracked.review_id && recentReviews[0].relevant_examples.length === 2)
   const rejectedPrinciple = 'Never center-align body text in dense UIs.'
   const evidenceBeforeFeedback = store.listPrinciples().find(p => p.principle === target).evidence
   const feedback = store.recordFeedback({
@@ -93,13 +97,19 @@ try {
 
   // stats
   const stats = store.stats()
-  check('stats: counts', stats.examples === 2 && stats.good === 1 && stats.bad === 1 && stats.principles === SEED_PRINCIPLES.length + 1 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1, JSON.stringify(stats))
+  check('stats: counts', stats.examples === SEED_EXAMPLES.length + 2 && stats.good === 3 && stats.bad === 3 && stats.principles === SEED_PRINCIPLES.length + 1 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1, JSON.stringify(stats))
 
   // mirror content reflects corpus
   const tasteMd = readFileSync(join(dir, 'taste.md'), 'utf8')
   check('mirror: taste.md lists example', tasteMd.includes('stripe.com homepage'))
   const feedbackMd = readFileSync(join(dir, 'feedback.md'), 'utf8')
   check('mirror: feedback.md lists effectiveness', feedbackMd.includes(target) && feedbackMd.includes('1 accepted / 0 rejected'))
+
+  const examplesBeforeReopen = store.stats().examples
+  store.close()
+  const reopened = new PalateStore(dir)
+  check('seed: reopening does not duplicate examples', reopened.stats().examples === examplesBeforeReopen)
+  reopened.close()
 } catch (error) {
   failed++
   console.error('FATAL', error)

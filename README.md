@@ -28,7 +28,9 @@ Taste is not a gift — it's **pattern recognition built from exposure**. See en
 | `palate_effectiveness` | See which principles were accepted or rejected in real review feedback |
 | `palate_stats` | How much taste has accumulated: examples studied, principles distilled |
 
-Ships with a **starter palate** of 12 foundational principles (hierarchy, contrast, type scale, spacing rhythm, alignment, palette discipline, affordance, feedback, clarity, and an anti-AI-slop rule), so it's useful out of the box — then it grows from there.
+Ships with a **starter palate** of 12 foundational principles plus four transparent teaching examples (good and bad dashboards, a readable table, and generic landing-page boilerplate), so the first review has concrete evidence — then it grows from there.
+
+The four starter examples are inserted only when the local taste database is empty. Installing or upgrading the plugin never overwrites an existing palate.
 
 ## How it works
 
@@ -43,7 +45,7 @@ palate_review (a design)      ──▶  review_id + principles + relevant examp
 - **Storage**: `node:sqlite` (built into Node ≥ 22) at `$DSH_HOME/palate/`, plus human-readable `taste.md` / `principles.md` mirrors. Zero runtime dependencies.
 - **Retrieval**: a review ranks examples against the current description using local words, tags, and Chinese word fragments; when no precedent is relevant, it leaves the evidence empty instead of padding with recent entries.
 - **Feedback loop**: every `palate_review` snapshots its evidence; `palate_feedback` records the outcome, while `feedback.md` and the panel show actual acceptance/rejection data.
-- **The panel**: a draggable overlay shows examples studied, principles distilled, review feedback, and recent judgments.
+- **The panel**: a draggable overlay shows examples studied, principles distilled, recent review subjects, the exact example refs cited by each review, and recent judgments.
 - **Vision pairing**: feed it screenshots by reading them with a vision tool first (e.g. `modlens_read_image`), then pass the description to `palate_review`.
 
 ## Honest framing

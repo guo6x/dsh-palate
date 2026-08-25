@@ -36,6 +36,7 @@ export function apply(ctx) {
           if (suffix === '/stats') sendJson(res, 200, store.stats())
           else if (suffix === '/principles') sendJson(res, 200, store.listPrinciples())
           else if (suffix === '/effectiveness') sendJson(res, 200, store.listEffectiveness())
+          else if (suffix === '/reviews') sendJson(res, 200, store.listReviews())
           else if (suffix === '/recent') sendJson(res, 200, store.listExamples({ limit: 12 }))
           else sendJson(res, 404, { error: 'no such endpoint' })
         } catch (error) {

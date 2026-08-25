@@ -34,17 +34,22 @@ function PalatePanel() {
   const [principles, setPrinciples] = useState([])
   const [effectiveness, setEffectiveness] = useState([])
   const [recent, setRecent] = useState([])
+  const [reviews, setReviews] = useState([])
   const [pos, setPos] = useState({ x: null, y: null })
 
   useEffect(() => {
     let alive = true
     const load = async () => {
-      const [s, p, e, r] = await Promise.all([getJson('/palate/stats'), getJson('/palate/principles'), getJson('/palate/effectiveness'), getJson('/palate/recent')])
+      const [s, p, e, r, v] = await Promise.all([
+        getJson('/palate/stats'), getJson('/palate/principles'), getJson('/palate/effectiveness'),
+        getJson('/palate/recent'), getJson('/palate/reviews'),
+      ])
       if (!alive) return
       if (s) setStats(s)
       if (Array.isArray(p)) setPrinciples(p)
       if (Array.isArray(e)) setEffectiveness(e)
       if (Array.isArray(r)) setRecent(r)
+      if (Array.isArray(v)) setReviews(v)
     }
     load()
     const timer = setInterval(load, 4000)
@@ -94,6 +99,16 @@ function PalatePanel() {
           React.createElement('div', { style: { fontWeight: 700, marginBottom: 2 } }, '反馈效果（采纳 / 拒绝）'),
           effectiveness.filter(item => item.feedback > 0).slice(0, 4).map(item =>
             React.createElement('div', { key: item.id }, `· [${item.category}] ${item.principle} — ${item.accepted}/${item.rejected}`)))
+      : null,
+    reviews.length
+      ? React.createElement('div', { style: listStyle },
+          React.createElement('div', { style: { fontWeight: 700, marginBottom: 2 } }, '最近评审（引用证据）'),
+          reviews.slice(0, 4).map(review =>
+            React.createElement('div', { key: review.review_id },
+              React.createElement('div', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, `#${review.review_id} ${review.subject}`),
+              React.createElement('div', { style: { opacity: 0.65 } }, review.relevant_examples?.length
+                ? `证据：${review.relevant_examples.map(example => `[${example.verdict}] ${example.ref}`).join(' · ')}`
+                : '证据：暂无匹配案例'))))
       : null,
     recent.length
       ? React.createElement('div', { style: listStyle },

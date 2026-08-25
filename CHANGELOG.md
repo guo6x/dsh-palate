@@ -2,6 +2,13 @@
 
 All notable changes to dsh-palate.
 
+## [0.4.0] - 2026-08-25
+
+### Added
+
+- Four transparent starter examples are seeded only when a profile has no taste examples, giving the first review concrete good/bad evidence without overwriting existing user data.
+- The growth panel now shows recent tracked reviews and the exact example refs captured as evidence through the read-only `/palate/reviews` route.
+
 ## [0.3.3] - 2026-08-25
 
 ### Changed

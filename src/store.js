@@ -31,6 +31,42 @@ export const SEED_PRINCIPLES = [
   { principle: 'Avoid generic AI-slop: no gradient-hero + three-cards + testimonial boilerplate.', category: 'originality' },
 ]
 
+/**
+ * A small, transparent corpus so the first review has concrete evidence.
+ * These are deliberately generic teaching examples, not claims about named
+ * products; users can keep, learn from, or extend them with their own taste.
+ */
+export const SEED_EXAMPLES = [
+  {
+    ref: 'Starter: focused analytics dashboard',
+    verdict: 'good',
+    reason: 'One revenue metric leads; the supporting trend and secondary metrics are visibly subordinate.',
+    tags: ['starter', 'analytics', 'hierarchy'],
+    source: 'dsh-palate starter palate',
+  },
+  {
+    ref: 'Starter: equal-weight KPI wall',
+    verdict: 'bad',
+    reason: 'Twelve KPI cards share identical weight and color, so the decision signal is buried.',
+    tags: ['starter', 'analytics', 'hierarchy'],
+    source: 'dsh-palate starter palate',
+  },
+  {
+    ref: 'Starter: readable dark data table',
+    verdict: 'good',
+    reason: 'Strong text contrast, aligned columns, and explicit status color make scanning predictable.',
+    tags: ['starter', 'analytics', 'contrast'],
+    source: 'dsh-palate starter palate',
+  },
+  {
+    ref: 'Starter: gradient hero plus three cards',
+    verdict: 'bad',
+    reason: 'Generic boilerplate spends the strongest contrast on decoration instead of the product decision.',
+    tags: ['starter', 'marketing', 'originality'],
+    source: 'dsh-palate starter palate',
+  },
+]
+
 const VERDICTS = new Set(['good', 'bad', 'note'])
 const REVIEW_OUTCOMES = new Set(['helpful', 'mixed', 'unhelpful'])
 const MAX_FEEDBACK_PRINCIPLES = 30
@@ -114,6 +150,11 @@ export class PalateStore {
       const ins = this.db.prepare('INSERT INTO principles (principle, category) VALUES (?, ?)')
       for (const p of SEED_PRINCIPLES) ins.run(p.principle, p.category)
     }
+    const { c: examples } = this.db.prepare('SELECT COUNT(*) AS c FROM taste').get()
+    if (examples === 0) {
+      const ins = this.db.prepare('INSERT INTO taste (ref, verdict, reason, tags, source) VALUES (?, ?, ?, ?, ?)')
+      for (const e of SEED_EXAMPLES) ins.run(e.ref, e.verdict, e.reason, JSON.stringify(e.tags), e.source)
+    }
     this.writeMirrors()
   }
 
@@ -188,6 +229,23 @@ export class PalateStore {
     const res = this.db.prepare('INSERT INTO reviews (subject, tag, principles, examples) VALUES (?, ?, ?, ?)')
       .run(subject, typeof tag === 'string' && tag.length > 0 ? tag : null, JSON.stringify(principles), JSON.stringify(examples))
     return { review_id: Number(res.lastInsertRowid), principle_names: principles, ...context }
+  }
+
+  /** Return recent tracked reviews with the exact example refs captured as evidence. */
+  listReviews({ limit = 8 } = {}) {
+    return this.db.prepare(`
+      SELECT id, subject, tag, principles, examples, created_at
+      FROM reviews
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(Math.max(1, Math.min(50, Number(limit) || 8))).map(row => ({
+      review_id: row.id,
+      subject: row.subject,
+      tag: row.tag,
+      principle_count: safeParse(row.principles).length,
+      relevant_examples: safeParse(row.examples),
+      created_at: row.created_at,
+    }))
   }
 
   /** Record one outcome for a review and reinforce only principles the user says helped. */

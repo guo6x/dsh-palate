@@ -105,13 +105,16 @@ try {
   )))
   check('registers one prefix route', registeredRoutes.length === 1 && registeredRoutes[0].kind === 'prefix' && registeredRoutes[0].path === '/palate')
 
+  const initialStats = await tool('palate_stats').execute({})
+  check('starter palate includes examples for first review', initialStats.examples === 4 && initialStats.principles === 12)
+
   const added = await tool('palate_add').execute({
     ref: 'product dashboard',
     verdict: 'good',
     reason: 'Clear hierarchy and purposeful spacing.',
     tags: ['dashboard'],
   })
-  check('palate_add executes through its host definition', added.id >= 1 && added.stats.examples === 1)
+  check('palate_add executes through its host definition', added.id >= 1 && added.stats.examples === 5)
 
   const learnedText = 'Keep dense dashboards scannable with a stable visual hierarchy.'
   const learned = await tool('palate_learn').execute({ principle: learnedText, category: 'hierarchy' })
@@ -140,11 +143,13 @@ try {
   check('palate_effectiveness reports the recorded outcome', effectiveness.principles.some(principle => principle.principle === learnedText && principle.accepted === 1 && principle.acceptance_rate === 100))
 
   const stats = await tool('palate_stats').execute({})
-  check('palate_stats reports the complete host call chain', stats.examples === 1 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1)
+  check('palate_stats reports the complete host call chain', stats.examples === 5 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1)
 
   const route = registeredRoutes[0]
   const local = await request(route, '/palate/effectiveness', '127.0.0.1')
   check('loopback effectiveness API returns JSON', local.status === 200 && local.headers['content-type'].startsWith('application/json') && local.body.some(principle => principle.principle === learnedText && principle.accepted === 1))
+  const reviews = await request(route, '/palate/reviews', '127.0.0.1')
+  check('loopback reviews API exposes evidence refs', reviews.status === 200 && reviews.body[0]?.relevant_examples.length === 1 && reviews.body[0].relevant_examples[0].ref === 'product dashboard')
   const remote = await request(route, '/palate/effectiveness', '203.0.113.10')
   check('loopback API rejects remote requests', remote.status === 403 && remote.body.error === 'loopback only')
 } finally {
