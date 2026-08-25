@@ -50,13 +50,32 @@ palate_review (一个设计)      ──▶  review_id + 原则 + 相关例子  
 
 这是**积累式检索 + 编码原则 + 显式反馈**，不是模型微调。插件提供学到的品味当上下文，*模型*来写真正的评审；只有用户/agent 用 `palate_feedback` 明确确认后，原则才获得额外证据。这让判断保持可审计（你能直接读 `taste.md`、`principles.md` 和 `feedback.md`），不用重训任何东西。
 
-## 安装
+## 安装——复制、粘贴、验收
 
 ```sh
+# GitHub 是当前受支持的发布渠道。
 dsh plugin --profile web add github:guo6x/dsh-palate
 ```
 
-要求：DSH web profile、Node ≥ 22。重启 `dsh web`、刷新页面，侧边栏底部出现 👁️ 按钮。
+如果 `dsh web` 正在运行，重启它再刷新页面。**当侧边栏底部出现 👁️ 按钮时，安装就完成了。**点开即可看到起始品味、原则和反馈历史。
+
+要求：DSH web profile、Node ≥ 22。插件只用本地 SQLite 存储，不需要账号、API key 或 embedding 服务。
+
+从本地 checkout 开发？在仓库目录执行 `dsh plugin --profile web add .`。仓库已提交 `lib/` 构建产物，所以 GitHub 安装不会跑构建脚本。
+
+## 90 秒看见成长闭环
+
+新开一个对话，直接粘贴这个安全、纯本地的任务：
+
+> 给一个信息密集的分析仪表盘建立第一条品味记录。用 `palate_add` 记一个**反例**：“12 张 KPI 卡片视觉权重完全相同，真正的决策信号被淹没”；标签用 `dashboard, hierarchy`。然后用 `palate_review` 评审“一个有 12 张等权 KPI 卡、一个主要营收指标和一张小趋势图的分析仪表盘”，并说明你用了哪些已学原则。
+
+回答应点出匹配到的记录和起始原则，而不是套泛泛的检查清单。打开 👁️ 面板，可以看到案例数增加和新评审出现。如果你真的采纳了一条建议，再让 agent 为该评审记录 `palate_feedback`；只有被确认有用的原则才会增加证据。
+
+### 如果看不到 👁️ 按钮
+
+- 确认插件安装在 **web** profile：`dsh plugin --profile web list dsh-palate`。
+- 安装后必须重启 `dsh web`；仅刷新浏览器不会加载新的宿主代码。
+- 确认 Node 为 22 或更新版本。插件没有其他运行时依赖需要安装。
 
 ## 开发
 

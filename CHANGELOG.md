@@ -2,6 +2,12 @@
 
 All notable changes to dsh-palate.
 
+## [0.3.3] - 2026-08-25
+
+### Changed
+
+- Make the GitHub first-run path explicit in both READMEs: install, restart, visible success signal, a safe 90-second learning-loop demo, and recovery steps.
+
 ## [0.3.2] - 2026-08-25
 
 ### Fixed

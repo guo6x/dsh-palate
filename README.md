@@ -50,13 +50,32 @@ palate_review (a design)      ──▶  review_id + principles + relevant examp
 
 This is **accumulated retrieval + codified principles + explicit feedback**, not model fine-tuning. The plugin supplies learned taste as context; *the model* renders the critique. Only a user/agent-confirmed `palate_feedback` adds evidence to a principle, keeping judgment auditable through `taste.md`, `principles.md`, and `feedback.md` without retraining anything.
 
-## Install
+## Install — copy, paste, confirm
 
 ```sh
+# GitHub is the supported release channel.
 dsh plugin --profile web add github:guo6x/dsh-palate
 ```
 
-Requirements: DeepSeek Harness web profile, Node ≥ 22. Restart `dsh web`, refresh the page — a 👁️ button appears at the sidebar foot.
+Restart a running `dsh web` process, then refresh the page. **Installation is complete when a 👁️ button appears at the bottom of the sidebar.** Click it to see the starter palate, its principles, and its feedback history.
+
+Requirements: the DeepSeek Harness web profile and Node ≥ 22. The plugin uses only local SQLite storage — no account, API key, or embedding service is required.
+
+Developing from a checkout instead? Run `dsh plugin --profile web add .` from the repository directory. The committed `lib/` files mean GitHub installs do not run a build script.
+
+## See the learning loop in 90 seconds
+
+Start a new chat and paste this safe, local-first task:
+
+> Build our first taste record for a dense analytics dashboard. Use `palate_add` to save one **bad** example: “all 12 KPI cards have equal visual weight, so the decision signal is buried”; tag it `dashboard, hierarchy`. Then use `palate_review` to critique “an analytics dashboard with twelve equal KPI cards, one primary revenue metric, and a small trend chart.” Explain which learned principles you used.
+
+The response should name the matched record and starter principles instead of applying a generic checklist. Open the 👁️ panel to see the example count grow and the new review appear. If you adopt a recommendation, ask the agent to record `palate_feedback` for that review; only confirmed helpful principles gain evidence.
+
+### If the 👁️ button is missing
+
+- Confirm the plugin is installed in the **web** profile: `dsh plugin --profile web list dsh-palate`.
+- Restart the `dsh web` process after installing; a browser refresh alone cannot load new host code.
+- Check that Node is version 22 or newer. The plugin has no additional runtime dependency to install.
 
 ## Develop
 
