@@ -9,8 +9,11 @@ export const name = 'dsh-palate'
 export const inject = ['slots']
 
 const panelStyle = {
-  position: 'fixed', top: '4.5rem', left: '20rem', zIndex: 1200, width: 330,
-  borderRadius: 12, overflow: 'hidden',
+  // Keep the growth panel below the pilot cockpit by default. All three
+  // floating panels remain draggable, but their initial docks should not
+  // steal each other's controls when opened together.
+  position: 'fixed', top: 'calc(4.5rem + 390px)', left: '20rem', zIndex: 1200, width: 330,
+  maxHeight: 'calc(100vh - 7rem)', borderRadius: 12, overflow: 'auto',
   background: 'rgba(24, 22, 26, 0.96)', border: '1px solid rgba(255,255,255,0.14)',
   boxShadow: '0 12px 40px rgba(0,0,0,0.45)', fontFamily: 'system-ui, sans-serif',
   color: '#ece8ee', userSelect: 'none',

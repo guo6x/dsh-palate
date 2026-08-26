@@ -2,6 +2,12 @@
 
 All notable changes to dsh-palate.
 
+## [0.4.1] - 2026-08-26
+
+### Fixed
+
+- Dock the growth panel below the browser cockpit by default and cap its height so opening the DSH plugin panels together does not hide controls.
+
 ## [0.4.0] - 2026-08-25
 
 ### Added
