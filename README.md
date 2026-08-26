@@ -63,7 +63,7 @@ Restart a running `dsh web` process, then refresh the page. **Installation is co
 
 Requirements: the DeepSeek Harness web profile and Node ≥ 22. The plugin uses only local SQLite storage — no account, API key, or embedding service is required.
 
-Developing from a checkout instead? Run `dsh plugin --profile web add .` from the repository directory. The repository commits the `lib/` entrypoints for immediate startup and also runs `prepare` during Git dependency installation to rebuild them when needed.
+Developing from a checkout instead? Run `dsh plugin --profile web add .` from the repository directory. The repository commits the `lib/` entrypoints, so GitHub and path installs can start immediately without running an install-time build script.
 
 ## See the learning loop in 90 seconds
 

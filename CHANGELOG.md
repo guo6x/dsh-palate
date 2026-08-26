@@ -2,6 +2,13 @@
 
 All notable changes to dsh-palate.
 
+## [0.4.3] - 2026-08-26
+
+### Fixed
+
+- Keep GitHub installs lifecycle-script free: the committed `lib/` entrypoints are the source of truth, so pnpm does not need to run a blocked `prepare` build for this Git dependency.
+- Add CI coverage that fails when a source change leaves the committed `lib/` output out of sync.
+
 ## [0.4.2] - 2026-08-26
 
 ### Fixed

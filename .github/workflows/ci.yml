@@ -19,3 +19,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build and test
         run: pnpm test
+      - name: Verify committed build output
+        run: |
+          git diff --exit-code -- lib
+          test -z "$(git status --porcelain --untracked-files=all -- lib)"

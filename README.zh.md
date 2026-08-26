@@ -63,7 +63,7 @@ dsh plugin --profile web add github:guo6x/dsh-palate
 
 要求：DSH web profile、Node ≥ 22。插件只用本地 SQLite 存储，不需要账号、API key 或 embedding 服务。
 
-从本地 checkout 开发？在仓库目录执行 `dsh plugin --profile web add .`。仓库提交了 `lib/` 构建产物以保证立即启动，同时 Git 依赖安装时会通过 `prepare` 自动重新构建，避免源码与产物不同步。
+从本地 checkout 开发？在仓库目录执行 `dsh plugin --profile web add .`。仓库提交了 `lib/` 构建产物，GitHub 安装和本地路径安装都可以直接启动，不需要在安装时执行构建脚本。
 
 ## 90 秒看见成长闭环
 
