@@ -2,6 +2,12 @@
 
 All notable changes to dsh-palate.
 
+## [0.4.2] - 2026-08-26
+
+### Fixed
+
+- Run the build through `prepare` when the plugin is installed as a Git dependency, while retaining committed `lib/` entrypoints as a fallback.
+
 ## [0.4.1] - 2026-08-26
 
 ### Fixed

@@ -8,7 +8,7 @@
  * Run: node build.mjs && node tests/plugin-contract.mjs
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -87,6 +87,10 @@ function tool(name) {
   assert.ok(definition, `missing tool: ${name}`)
   return definition
 }
+
+const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+check('package has Git-install build safety net', packageJson.scripts?.prepare === 'node build.mjs')
+check('package ships both loader entrypoints', existsSync(new URL('../lib/index.js', import.meta.url)) && existsSync(new URL('../lib/client.js', import.meta.url)))
 
 try {
   process.env.DSH_HOME = home
