@@ -2,6 +2,16 @@
 
 All notable changes to dsh-palate.
 
+## [0.6.0] - 2026-08-27
+
+### Added
+
+- A visual-training desk: `palate_intake` stages structured hierarchy, typography, color, spacing, interaction, and related observations as a reviewable session instead of immediately changing learned taste.
+- `palate_candidates` exposes the pending/resolved training queue; `palate_decide` is the only path that accepts or rejects candidates after an explicit human decision. Accepted examples and principles retain their session provenance; rejected candidates remain auditable without changing the palate.
+- Explicit `aligned`, `conflicts`, and `insufficient_evidence` comparisons against visual-reference packs. A comparison against an unapplied pack is clearly marked reference-only and never activates that pack.
+- A loopback `/palate/training` API, `training.md` read-only mirror, candidate-queue stats, and panel visibility for staged sessions and decisions.
+- Principle provenance storage with an additive migration for existing SQLite palates.
+
 ## [0.5.0] - 2026-08-27
 
 ### Added

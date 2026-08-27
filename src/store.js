@@ -165,6 +165,14 @@ export const STYLE_PACKS = [
 const VERDICTS = new Set(['good', 'bad', 'note'])
 const REVIEW_OUTCOMES = new Set(['helpful', 'mixed', 'unhelpful'])
 const MAX_FEEDBACK_PRINCIPLES = 30
+const TRAINING_AREAS = new Set(['hierarchy', 'typography', 'color', 'spacing', 'interaction', 'imagery', 'content', 'motion', 'accessibility', 'other'])
+const TRAINING_CONFIDENCE = new Set(['high', 'medium', 'low'])
+const TRAINING_COMPARISON_STATUSES = new Set(['aligned', 'conflicts', 'insufficient_evidence'])
+const TRAINING_CANDIDATE_STATUSES = new Set(['pending', 'accepted', 'rejected'])
+const TRAINING_DECISIONS = new Set(['accept', 'reject'])
+const MAX_TRAINING_OBSERVATIONS = 15
+const MAX_TRAINING_PRINCIPLES = 12
+const MAX_TRAINING_CANDIDATES = 30
 
 /**
  * A dependency-free local tokenizer. Word tokens cover alphabetic languages;
@@ -214,6 +222,7 @@ export class PalateStore {
         category TEXT,
         tags TEXT NOT NULL DEFAULT '[]',
         evidence INTEGER DEFAULT 0,
+        source TEXT NOT NULL DEFAULT '',
         created_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS applied_style_packs (
@@ -243,16 +252,43 @@ export class PalateStore {
         PRIMARY KEY (feedback_id, principle),
         FOREIGN KEY (feedback_id) REFERENCES review_feedback(id)
       );
+      CREATE TABLE IF NOT EXISTS training_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT '',
+        verdict TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        observations TEXT NOT NULL,
+        tags TEXT NOT NULL,
+        comparisons TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS training_candidates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('example', 'principle')),
+        payload TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
+        decision_note TEXT NOT NULL DEFAULT '',
+        created_at TEXT DEFAULT (datetime('now')),
+        decided_at TEXT,
+        FOREIGN KEY (session_id) REFERENCES training_sessions(id)
+      );
+      CREATE INDEX IF NOT EXISTS training_candidates_status_id ON training_candidates(status, id DESC);
+      CREATE INDEX IF NOT EXISTS training_candidates_session_id ON training_candidates(session_id, id ASC);
       PRAGMA foreign_keys = ON;
     `)
     const principleColumns = this.db.prepare('PRAGMA table_info(principles)').all()
     if (!principleColumns.some(column => column.name === 'tags')) {
       this.db.exec("ALTER TABLE principles ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
     }
+    if (!principleColumns.some(column => column.name === 'source')) {
+      this.db.exec("ALTER TABLE principles ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+    }
     const { c } = this.db.prepare('SELECT COUNT(*) AS c FROM principles').get()
     if (c === 0) {
-      const ins = this.db.prepare('INSERT INTO principles (principle, category, tags) VALUES (?, ?, ?)')
-      for (const p of SEED_PRINCIPLES) ins.run(p.principle, p.category, JSON.stringify(p.tags ?? []))
+      const ins = this.db.prepare('INSERT INTO principles (principle, category, tags, source) VALUES (?, ?, ?, ?)')
+      for (const p of SEED_PRINCIPLES) ins.run(p.principle, p.category, JSON.stringify(p.tags ?? []), 'dsh-palate starter palate')
     }
     const { c: examples } = this.db.prepare('SELECT COUNT(*) AS c FROM taste').get()
     if (examples === 0) {
@@ -289,14 +325,15 @@ export class PalateStore {
     return out.filter(e => e.tags.includes(normalizedTag))
   }
 
-  addPrinciple(principle, category = '', tags = []) {
+  addPrinciple(principle, category = '', tags = [], source = '') {
     if (!principle) throw new Error('palate: principle is required')
     const normalizedTags = normalizeTags(tags)
-    const existing = this.db.prepare('SELECT id, category, tags FROM principles WHERE principle = ?').get(principle)
-    if (existing) return { id: existing.id, principle, category: existing.category, tags: safeParse(existing.tags), created: false }
-    const res = this.db.prepare('INSERT INTO principles (principle, category, tags) VALUES (?, ?, ?)').run(principle, category, JSON.stringify(normalizedTags))
+    const normalizedSource = optionalText(source, 'source', 2000)
+    const existing = this.db.prepare('SELECT id, category, tags, source FROM principles WHERE principle = ?').get(principle)
+    if (existing) return { id: existing.id, principle, category: existing.category, tags: safeParse(existing.tags), source: existing.source, created: false }
+    const res = this.db.prepare('INSERT INTO principles (principle, category, tags, source) VALUES (?, ?, ?, ?)').run(principle, category, JSON.stringify(normalizedTags), normalizedSource)
     this.writeMirrors()
-    return { id: Number(res.lastInsertRowid), principle, category, tags: normalizedTags, created: true }
+    return { id: Number(res.lastInsertRowid), principle, category, tags: normalizedTags, source: normalizedSource, created: true }
   }
 
   /** Bump the evidence count for principles an example supports. */
@@ -329,7 +366,14 @@ export class PalateStore {
     const mixed = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='mixed'").get().c
     const unhelpful = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='unhelpful'").get().c
     const stylePacks = this.db.prepare('SELECT COUNT(*) AS c FROM applied_style_packs').get().c
-    return { examples, good, bad, notes: examples - good - bad, principles, reviews, feedback, helpful, mixed, unhelpful, style_packs: stylePacks }
+    const trainingSessions = this.db.prepare('SELECT COUNT(*) AS c FROM training_sessions').get().c
+    const pendingCandidates = this.db.prepare("SELECT COUNT(*) AS c FROM training_candidates WHERE status='pending'").get().c
+    const acceptedCandidates = this.db.prepare("SELECT COUNT(*) AS c FROM training_candidates WHERE status='accepted'").get().c
+    const rejectedCandidates = this.db.prepare("SELECT COUNT(*) AS c FROM training_candidates WHERE status='rejected'").get().c
+    return {
+      examples, good, bad, notes: examples - good - bad, principles, reviews, feedback, helpful, mixed, unhelpful, style_packs: stylePacks,
+      training_sessions: trainingSessions, pending_candidates: pendingCandidates, accepted_candidates: acceptedCandidates, rejected_candidates: rejectedCandidates,
+    }
   }
 
   /** List the available opt-in visual-reference packs and whether this palate has applied them. */
@@ -343,6 +387,7 @@ export class PalateStore {
       tags: pack.tags,
       examples: pack.examples.length,
       principles: pack.principles.length,
+      reference_principles: pack.principles.map(principle => ({ ...principle, tags: normalizeTags(principle.tags ?? pack.tags) })),
       applied: applied.has(pack.id),
     }))
   }
@@ -357,7 +402,7 @@ export class PalateStore {
 
     this.db.exec('BEGIN')
     try {
-      const addPrinciple = this.db.prepare('INSERT OR IGNORE INTO principles (principle, category, tags) VALUES (?, ?, ?)')
+      const addPrinciple = this.db.prepare('INSERT OR IGNORE INTO principles (principle, category, tags, source) VALUES (?, ?, ?, ?)')
       const addExample = this.db.prepare('INSERT INTO taste (ref, verdict, reason, tags, source) VALUES (?, ?, ?, ?, ?)')
       const markApplied = this.db.prepare('INSERT INTO applied_style_packs (pack_id) VALUES (?)')
       for (const id of requested) {
@@ -369,7 +414,7 @@ export class PalateStore {
         }
         let principlesAdded = 0
         for (const principle of pack.principles) {
-          const result = addPrinciple.run(principle.principle, principle.category, JSON.stringify(normalizeTags(principle.tags ?? pack.tags)))
+          const result = addPrinciple.run(principle.principle, principle.category, JSON.stringify(normalizeTags(principle.tags ?? pack.tags)), pack.source)
           principlesAdded += result.changes
         }
         for (const example of pack.examples) {
@@ -388,6 +433,237 @@ export class PalateStore {
 
     if (changed) this.writeMirrors()
     return { packs: results, stats: this.stats() }
+  }
+
+  /**
+   * Stage a visual-analysis session as reviewable candidates. This deliberately
+   * does not mutate the taste corpus: a human must make the accept/reject call
+   * through decideTrainingCandidates before a candidate becomes learned taste.
+   */
+  createTrainingIntake({ subject, source = '', verdict, summary, observations, proposedPrinciples = [], tags = [], comparisons = [] }) {
+    const normalizedSubject = requiredText(subject, 'subject', 2000)
+    const normalizedSource = optionalText(source, 'source', 2000)
+    const normalizedVerdict = normalizeVerdict(verdict)
+    const normalizedSummary = requiredText(summary, 'summary', 4000)
+    const normalizedTags = normalizeTags(tags)
+    const normalizedObservations = trainingObservationList(observations)
+    const normalizedPrinciples = trainingPrincipleList(proposedPrinciples, normalizedTags)
+    const normalizedComparisons = this.normalizeTrainingComparisons(comparisons)
+    let sessionId
+
+    this.db.exec('BEGIN')
+    try {
+      const session = this.db.prepare(`
+        INSERT INTO training_sessions (subject, source, verdict, summary, observations, tags, comparisons)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        normalizedSubject,
+        normalizedSource,
+        normalizedVerdict,
+        normalizedSummary,
+        JSON.stringify(normalizedObservations),
+        JSON.stringify(normalizedTags),
+        JSON.stringify(normalizedComparisons),
+      )
+      sessionId = Number(session.lastInsertRowid)
+      const provenance = `dsh-palate training session #${sessionId}${normalizedSource ? ` · ${normalizedSource}` : ''}`
+      const candidate = this.db.prepare('INSERT INTO training_candidates (session_id, kind, payload) VALUES (?, ?, ?)')
+      const example = {
+        ref: normalizedSubject,
+        verdict: normalizedVerdict,
+        reason: trainingReason(normalizedSummary, normalizedObservations),
+        tags: normalizedTags,
+        source: provenance,
+      }
+      candidate.run(sessionId, 'example', JSON.stringify(example))
+      for (const principle of normalizedPrinciples) {
+        candidate.run(sessionId, 'principle', JSON.stringify({ ...principle, source: provenance }))
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+
+    this.writeMirrors()
+    return {
+      ...this.getTrainingSession(sessionId),
+      guidance: 'These are pending candidates, not learned taste. Present the observations and style-pack comparison to the user; call palate_decide only after an explicit accept/reject decision.',
+    }
+  }
+
+  /** Return pending or resolved training candidates, with their source session for auditability. */
+  listTrainingCandidates({ status, sessionId, limit = 20 } = {}) {
+    const where = []
+    const params = []
+    if (status !== undefined && status !== '') {
+      const normalizedStatus = normalizeTrainingCandidateStatus(status)
+      where.push('c.status = ?')
+      params.push(normalizedStatus)
+    }
+    if (sessionId !== undefined && sessionId !== '') {
+      const normalizedSessionId = positiveInteger(sessionId, 'session_id')
+      where.push('c.session_id = ?')
+      params.push(normalizedSessionId)
+    }
+    let sql = `
+      SELECT c.*, s.subject AS session_subject, s.source AS session_source
+      FROM training_candidates c
+      JOIN training_sessions s ON s.id = c.session_id
+    `
+    if (where.length > 0) sql += ` WHERE ${where.join(' AND ')}`
+    sql += ' ORDER BY c.id DESC LIMIT ?'
+    params.push(boundedLimit(limit, 20, 50))
+    return this.db.prepare(sql).all(...params).map(row => this.trainingCandidate(row))
+  }
+
+  /** Return compact training-desk state for the loopback panel and model tools. */
+  trainingSummary({ sessionLimit = 5 } = {}) {
+    const stats = this.stats()
+    return {
+      stats: {
+        sessions: stats.training_sessions,
+        pending: stats.pending_candidates,
+        accepted: stats.accepted_candidates,
+        rejected: stats.rejected_candidates,
+      },
+      sessions: this.listTrainingSessions({ limit: sessionLimit }),
+    }
+  }
+
+  /** Apply an explicit user decision to one or more pending candidates. */
+  decideTrainingCandidates({ candidateIds, decision, note = '' }) {
+    const ids = trainingCandidateIdList(candidateIds)
+    if (!TRAINING_DECISIONS.has(decision)) throw new Error(`palate: decision must be one of ${[...TRAINING_DECISIONS].join(', ')}`)
+    const normalizedNote = optionalText(note, 'note', 4000)
+    const placeholders = ids.map(() => '?').join(', ')
+    const rows = this.db.prepare(`SELECT * FROM training_candidates WHERE id IN (${placeholders})`).all(...ids)
+    if (rows.length !== ids.length) {
+      const found = new Set(rows.map(row => Number(row.id)))
+      const missing = ids.filter(id => !found.has(id))
+      throw new Error(`palate: training candidate(s) do not exist: ${missing.join(', ')}`)
+    }
+    const byId = new Map(rows.map(row => [Number(row.id), row]))
+    const candidates = ids.map(id => ({ row: byId.get(id), candidate: this.trainingCandidate(byId.get(id)) }))
+    const resolved = candidates.filter(({ candidate }) => candidate.status !== 'pending')
+    if (resolved.length > 0) throw new Error(`palate: training candidate(s) already decided: ${resolved.map(({ candidate }) => candidate.candidate_id).join(', ')}`)
+
+    const results = []
+    const status = decision === 'accept' ? 'accepted' : 'rejected'
+    this.db.exec('BEGIN')
+    try {
+      const addExample = this.db.prepare('INSERT INTO taste (ref, verdict, reason, tags, source) VALUES (?, ?, ?, ?, ?)')
+      const addPrinciple = this.db.prepare('INSERT OR IGNORE INTO principles (principle, category, tags, source) VALUES (?, ?, ?, ?)')
+      const update = this.db.prepare("UPDATE training_candidates SET status = ?, decision_note = ?, decided_at = datetime('now') WHERE id = ?")
+      for (const { candidate } of candidates) {
+        let created = false
+        if (decision === 'accept' && candidate.kind === 'example') {
+          const example = acceptedExamplePayload(candidate)
+          addExample.run(example.ref, example.verdict, example.reason, JSON.stringify(example.tags), example.source)
+          created = true
+        } else if (decision === 'accept' && candidate.kind === 'principle') {
+          const principle = acceptedPrinciplePayload(candidate)
+          created = addPrinciple.run(principle.principle, principle.category, JSON.stringify(principle.tags), principle.source).changes > 0
+        }
+        update.run(status, normalizedNote, candidate.candidate_id)
+        results.push({ candidate_id: candidate.candidate_id, kind: candidate.kind, status, created })
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+
+    this.writeMirrors()
+    return {
+      decision,
+      candidate_ids: ids,
+      results,
+      training: this.trainingSummary(),
+      stats: this.stats(),
+    }
+  }
+
+  /** Return one session with its candidates and preserved observations. */
+  getTrainingSession(sessionId) {
+    const id = positiveInteger(sessionId, 'session_id')
+    const row = this.db.prepare('SELECT * FROM training_sessions WHERE id = ?').get(id)
+    if (row === undefined) throw new Error(`palate: training session #${id} does not exist`)
+    const candidates = this.db.prepare('SELECT * FROM training_candidates WHERE session_id = ? ORDER BY id ASC').all(id)
+      .map(candidate => this.trainingCandidate(candidate))
+    return this.trainingSession(row, candidates)
+  }
+
+  listTrainingSessions({ limit = 5 } = {}) {
+    const rows = this.db.prepare('SELECT * FROM training_sessions ORDER BY id DESC LIMIT ?').all(boundedLimit(limit, 5, 100))
+    const candidates = this.db.prepare('SELECT * FROM training_candidates WHERE session_id = ? ORDER BY id ASC')
+    return rows.map(row => this.trainingSession(row, candidates.all(row.id).map(candidate => this.trainingCandidate(candidate))))
+  }
+
+  trainingSession(row, candidates) {
+    const candidateCounts = { pending: 0, accepted: 0, rejected: 0 }
+    for (const candidate of candidates) candidateCounts[candidate.status]++
+    return {
+      session_id: Number(row.id),
+      subject: row.subject,
+      source: row.source,
+      verdict: row.verdict,
+      summary: row.summary,
+      observations: safeParse(row.observations),
+      tags: safeParse(row.tags),
+      comparisons: safeParse(row.comparisons),
+      candidate_counts: candidateCounts,
+      candidates,
+      created_at: row.created_at,
+    }
+  }
+
+  trainingCandidate(row) {
+    const payload = safeObject(row.payload)
+    return {
+      ...payload,
+      candidate_id: Number(row.id),
+      session_id: Number(row.session_id),
+      kind: row.kind,
+      status: row.status,
+      decision_note: row.decision_note,
+      created_at: row.created_at,
+      decided_at: row.decided_at,
+      session_subject: row.session_subject,
+      session_source: row.session_source,
+    }
+  }
+
+  normalizeTrainingComparisons(comparisons) {
+    if (!Array.isArray(comparisons)) throw new Error('palate: comparisons must be an array')
+    if (comparisons.length > STYLE_PACKS.length) throw new Error(`palate: comparisons accepts at most ${STYLE_PACKS.length} style packs`)
+    const applied = new Set(this.db.prepare('SELECT pack_id FROM applied_style_packs').all().map(row => row.pack_id))
+    const output = []
+    for (const item of comparisons) {
+      if (item === null || typeof item !== 'object' || Array.isArray(item)) throw new Error('palate: each comparison must be an object')
+      const packId = requiredText(item.pack_id, 'comparisons[].pack_id', 100).toLocaleLowerCase()
+      const pack = STYLE_PACKS.find(value => value.id === packId)
+      if (pack === undefined) throw new Error(`palate: unknown style pack in comparison: ${packId}`)
+      if (output.some(comparison => comparison.pack_id === packId)) throw new Error(`palate: duplicate style-pack comparison: ${packId}`)
+      if (!TRAINING_COMPARISON_STATUSES.has(item.status)) throw new Error(`palate: comparison status must be one of ${[...TRAINING_COMPARISON_STATUSES].join(', ')}`)
+      const evidence = requiredText(item.evidence, 'comparisons[].evidence', 2000)
+      const referencePrinciples = stringList(item.reference_principles ?? [], 'comparisons[].reference_principles')
+      const knownPrinciples = new Set(pack.principles.map(principle => principle.principle))
+      const unknownPrinciples = referencePrinciples.filter(principle => !knownPrinciples.has(principle))
+      if (unknownPrinciples.length > 0) throw new Error(`palate: comparison principles must belong to ${packId}: ${unknownPrinciples.join(', ')}`)
+      if (item.status !== 'insufficient_evidence' && referencePrinciples.length === 0) {
+        throw new Error(`palate: ${item.status} comparison needs at least one reference principle`)
+      }
+      output.push({
+        pack_id: pack.id,
+        pack_name: pack.name,
+        scope: applied.has(pack.id) ? 'active_palate' : 'reference_only',
+        status: item.status,
+        evidence,
+        reference_principles: referencePrinciples,
+      })
+    }
+    return output
   }
 
   /** Persist the exact evidence supplied for a review, then give the caller an ID to close the loop later. */
@@ -536,13 +812,14 @@ export class PalateStore {
       lines.push(`## [${e.verdict}] ${e.ref}`)
       if (e.reason) lines.push(`- why: ${e.reason}`)
       if (e.tags.length) lines.push(`- tags: ${e.tags.join(', ')}`)
+      if (e.source) lines.push(`- source: ${e.source}`)
       lines.push('')
     }
     writeFileSync(join(this.dir, 'taste.md'), lines.join('\n'))
 
     const ps = this.listPrinciples()
     const plines = ['# principles.md — dsh-palate codified taste', '', '<!-- Read-only mirror of the principles. -->', '']
-    for (const p of ps) plines.push(`- [${p.category}] ${p.principle} _(evidence ${p.evidence})_${p.tags.length ? ` · tags: ${p.tags.join(', ')}` : ''}`)
+    for (const p of ps) plines.push(`- [${p.category}] ${p.principle} _(evidence ${p.evidence})_${p.tags.length ? ` · tags: ${p.tags.join(', ')}` : ''}${p.source ? ` · source: ${p.source}` : ''}`)
     writeFileSync(join(this.dir, 'principles.md'), plines.join('\n'))
 
     const effectiveness = this.listEffectiveness().filter(item => item.feedback > 0)
@@ -552,6 +829,30 @@ export class PalateStore {
       flines.push(`- [${item.category}] ${item.principle} — ${item.accepted} accepted / ${item.rejected} rejected (${item.acceptance_rate}% acceptance)`)
     }
     writeFileSync(join(this.dir, 'feedback.md'), flines.join('\n'))
+
+    const training = this.trainingSummary({ sessionLimit: 100 })
+    const tlines = ['# training.md — dsh-palate visual-training desk', '', '<!-- Read-only mirror of staged visual analysis and explicit decisions. -->', '']
+    tlines.push(`Sessions: ${training.stats.sessions} · pending: ${training.stats.pending} · accepted: ${training.stats.accepted} · rejected: ${training.stats.rejected}`, '')
+    if (training.sessions.length === 0) tlines.push('No visual-analysis sessions staged yet.')
+    for (const session of training.sessions) {
+      tlines.push(`## #${session.session_id} [${session.verdict}] ${session.subject}`)
+      if (session.source) tlines.push(`- source: ${session.source}`)
+      tlines.push(`- summary: ${session.summary}`)
+      if (session.tags.length) tlines.push(`- tags: ${session.tags.join(', ')}`)
+      for (const observation of session.observations) tlines.push(`- observation [${observation.area}/${observation.confidence}]: ${observation.finding}`)
+      for (const comparison of session.comparisons) {
+        tlines.push(`- ${comparison.pack_name} (${comparison.scope}): ${comparison.status} — ${comparison.evidence}`)
+        for (const principle of comparison.reference_principles ?? []) tlines.push(`  - reference principle: ${principle}`)
+      }
+      for (const candidate of session.candidates) {
+        const label = candidate.kind === 'example' ? candidate.ref : candidate.principle
+        tlines.push(`- candidate #${candidate.candidate_id} [${candidate.kind}/${candidate.status}]: ${label}`)
+        if (candidate.kind === 'principle' && candidate.evidence) tlines.push(`  - candidate evidence: ${candidate.evidence}`)
+        if (candidate.decision_note) tlines.push(`  - decision note: ${candidate.decision_note}`)
+      }
+      tlines.push('')
+    }
+    writeFileSync(join(this.dir, 'training.md'), tlines.join('\n'))
   }
 
   close() {
@@ -561,6 +862,120 @@ export class PalateStore {
 
 function safeParse(s) {
   try { const v = JSON.parse(s); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+
+function safeObject(s) {
+  try {
+    const value = JSON.parse(s)
+    return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  } catch {
+    return {}
+  }
+}
+
+function optionalText(value, name, maxLength) {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string' || value.length > maxLength) throw new Error(`palate: ${name} must be a string up to ${maxLength} characters`)
+  return value.trim()
+}
+
+function requiredText(value, name, maxLength) {
+  const text = optionalText(value, name, maxLength)
+  if (text.length === 0) throw new Error(`palate: ${name} is required`)
+  return text
+}
+
+function normalizeVerdict(value) {
+  const verdict = requiredText(value, 'verdict', 20).toLocaleLowerCase()
+  if (!VERDICTS.has(verdict)) throw new Error(`palate: verdict must be one of ${[...VERDICTS].join(', ')}`)
+  return verdict
+}
+
+function positiveInteger(value, name) {
+  const id = Number(value)
+  if (!Number.isInteger(id) || id <= 0) throw new Error(`palate: ${name} must be a positive integer`)
+  return id
+}
+
+function boundedLimit(value, fallback, max) {
+  return Math.max(1, Math.min(max, Number(value) || fallback))
+}
+
+function trainingObservationList(values) {
+  if (!Array.isArray(values) || values.length === 0) throw new Error('palate: observations must be a non-empty array')
+  if (values.length > MAX_TRAINING_OBSERVATIONS) throw new Error(`palate: observations accepts at most ${MAX_TRAINING_OBSERVATIONS} items`)
+  return values.map((item, index) => {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) throw new Error('palate: each observation must be an object')
+    const area = requiredText(item.area, `observations[${index}].area`, 80).toLocaleLowerCase()
+    if (!TRAINING_AREAS.has(area)) throw new Error(`palate: observation area must be one of ${[...TRAINING_AREAS].join(', ')}`)
+    const finding = requiredText(item.finding, `observations[${index}].finding`, 1200)
+    const confidence = optionalText(item.confidence ?? 'medium', `observations[${index}].confidence`, 20).toLocaleLowerCase()
+    if (!TRAINING_CONFIDENCE.has(confidence)) throw new Error(`palate: observation confidence must be one of ${[...TRAINING_CONFIDENCE].join(', ')}`)
+    return { area, finding, confidence }
+  })
+}
+
+function trainingPrincipleList(values, sessionTags) {
+  if (!Array.isArray(values)) throw new Error('palate: proposed_principles must be an array')
+  if (values.length > MAX_TRAINING_PRINCIPLES) throw new Error(`palate: proposed_principles accepts at most ${MAX_TRAINING_PRINCIPLES} items`)
+  const output = []
+  for (let index = 0; index < values.length; index++) {
+    const item = values[index]
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) throw new Error('palate: each proposed principle must be an object')
+    const principle = requiredText(item.principle, `proposed_principles[${index}].principle`, 500)
+    if (output.some(candidate => candidate.principle === principle)) throw new Error(`palate: duplicate proposed principle: ${principle}`)
+    const category = optionalText(item.category, `proposed_principles[${index}].category`, 80) || 'other'
+    const evidence = requiredText(item.evidence, `proposed_principles[${index}].evidence`, 2000)
+    const tags = [...new Set([...sessionTags, ...normalizeTags(item.tags ?? [])])]
+    output.push({ principle, category, evidence, tags })
+  }
+  return output
+}
+
+function trainingReason(summary, observations) {
+  return [
+    summary,
+    'Structured observations:',
+    ...observations.map(observation => `[${observation.area}/${observation.confidence}] ${observation.finding}`),
+  ].join('\n')
+}
+
+function trainingCandidateIdList(values) {
+  if (!Array.isArray(values) || values.length === 0) throw new Error('palate: candidate_ids must be a non-empty array')
+  if (values.length > MAX_TRAINING_CANDIDATES) throw new Error(`palate: candidate_ids accepts at most ${MAX_TRAINING_CANDIDATES} items`)
+  const output = []
+  for (const value of values) {
+    const id = positiveInteger(value, 'candidate_ids')
+    if (!output.includes(id)) output.push(id)
+  }
+  return output
+}
+
+function normalizeTrainingCandidateStatus(value) {
+  const status = requiredText(value, 'status', 20).toLocaleLowerCase()
+  if (!TRAINING_CANDIDATE_STATUSES.has(status)) throw new Error(`palate: status must be one of ${[...TRAINING_CANDIDATE_STATUSES].join(', ')}`)
+  return status
+}
+
+function acceptedExamplePayload(candidate) {
+  if (candidate.kind !== 'example') throw new Error(`palate: training candidate #${candidate.candidate_id} is not an example`)
+  return {
+    ref: requiredText(candidate.ref, `training candidate #${candidate.candidate_id} ref`, 2000),
+    verdict: normalizeVerdict(candidate.verdict),
+    reason: optionalText(candidate.reason, `training candidate #${candidate.candidate_id} reason`, 20000),
+    tags: normalizeTags(candidate.tags ?? []),
+    source: optionalText(candidate.source, `training candidate #${candidate.candidate_id} source`, 2000),
+  }
+}
+
+function acceptedPrinciplePayload(candidate) {
+  if (candidate.kind !== 'principle') throw new Error(`palate: training candidate #${candidate.candidate_id} is not a principle`)
+  return {
+    principle: requiredText(candidate.principle, `training candidate #${candidate.candidate_id} principle`, 500),
+    category: optionalText(candidate.category, `training candidate #${candidate.candidate_id} category`, 80),
+    tags: normalizeTags(candidate.tags ?? []),
+    source: optionalText(candidate.source, `training candidate #${candidate.candidate_id} source`, 2000),
+  }
 }
 
 function stringList(values, name) {

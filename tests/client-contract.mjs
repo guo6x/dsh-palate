@@ -14,6 +14,7 @@ const source = await readFile(new URL('../src/client/index.jsx', import.meta.url
 assert.match(source, /top: 'calc\(4\.5rem \+ 390px\)'/)
 assert.match(source, /maxHeight: 'calc\(100vh - 7rem\)'/)
 assert.match(source, /getJson\('\/palate\/packs'\)/)
+assert.match(source, /getJson\('\/palate\/training'\)/)
 
 let entry
 globalThis.window = {

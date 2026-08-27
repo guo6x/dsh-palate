@@ -12,7 +12,7 @@ const panelStyle = {
   // Keep the growth panel below the pilot cockpit by default. All three
   // floating panels remain draggable, but their initial docks should not
   // steal each other's controls when opened together.
-  position: 'fixed', top: 'calc(4.5rem + 390px)', left: '20rem', zIndex: 1200, width: 330,
+  position: 'fixed', top: 'calc(4.5rem + 390px)', left: '20rem', zIndex: 1200, width: 350,
   maxHeight: 'calc(100vh - 7rem)', borderRadius: 12, overflow: 'auto',
   background: 'rgba(24, 22, 26, 0.96)', border: '1px solid rgba(255,255,255,0.14)',
   boxShadow: '0 12px 40px rgba(0,0,0,0.45)', fontFamily: 'system-ui, sans-serif',
@@ -39,14 +39,15 @@ function PalatePanel() {
   const [recent, setRecent] = useState([])
   const [reviews, setReviews] = useState([])
   const [packs, setPacks] = useState([])
+  const [training, setTraining] = useState(null)
   const [pos, setPos] = useState({ x: null, y: null })
 
   useEffect(() => {
     let alive = true
     const load = async () => {
-      const [s, p, e, r, v, k] = await Promise.all([
+      const [s, p, e, r, v, k, t] = await Promise.all([
         getJson('/palate/stats'), getJson('/palate/principles'), getJson('/palate/effectiveness'),
-        getJson('/palate/recent'), getJson('/palate/reviews'), getJson('/palate/packs'),
+        getJson('/palate/recent'), getJson('/palate/reviews'), getJson('/palate/packs'), getJson('/palate/training'),
       ])
       if (!alive) return
       if (s) setStats(s)
@@ -55,6 +56,7 @@ function PalatePanel() {
       if (Array.isArray(r)) setRecent(r)
       if (Array.isArray(v)) setReviews(v)
       if (Array.isArray(k)) setPacks(k)
+      if (t && typeof t === 'object') setTraining(t)
     }
     load()
     const timer = setInterval(load, 4000)
@@ -88,7 +90,7 @@ function PalatePanel() {
           React.createElement('div', { style: { opacity: 0.6 } }, `例子 ${stats.good}好/${stats.bad}坏`)),
           React.createElement('div', { style: chipStyle },
             React.createElement('div', { style: bigStyle }, stats.principles),
-            React.createElement('div', { style: { opacity: 0.6 } }, `原则 · ${stats.feedback ?? 0}反馈 · ${stats.style_packs ?? 0}包`)),
+            React.createElement('div', { style: { opacity: 0.6 } }, `原则 · ${stats.feedback ?? 0}反馈 · ${stats.pending_candidates ?? 0}待确认`)),
           React.createElement('div', { style: chipStyle },
             React.createElement('div', { style: bigStyle }, stats.reviews ?? 0),
             React.createElement('div', { style: { opacity: 0.6 } }, `评审 ${stats.helpful ?? 0}有效`)))
@@ -98,6 +100,18 @@ function PalatePanel() {
           React.createElement('div', { style: { fontWeight: 700, marginBottom: 2 } }, '参考风格包（用 palate_seed 启用）'),
           packs.map(pack =>
             React.createElement('div', { key: pack.id }, `· ${pack.applied ? '✓' : '○'} ${pack.name} — ${pack.applied ? '已启用' : '可启用'} (${pack.tags.join(', ')})`)))
+      : null,
+    training?.stats?.sessions
+      ? React.createElement('div', { style: listStyle },
+          React.createElement('div', { style: { fontWeight: 700, marginBottom: 2 } }, '视觉训练台（候选须经确认）'),
+          React.createElement('div', { style: { opacity: 0.7, marginBottom: 3 } }, `${training.stats.pending ?? 0} 待确认 · ${training.stats.accepted ?? 0} 已接纳 · ${training.stats.rejected ?? 0} 已拒绝`),
+          ...(training.sessions ?? []).slice(0, 2).map(session =>
+            React.createElement('div', { key: session.session_id, style: { marginBottom: 5 } },
+              React.createElement('div', { style: { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, `#${session.session_id} [${session.verdict}] ${session.subject}`),
+              React.createElement('div', { style: { opacity: 0.65 } }, `${session.candidate_counts?.pending ?? 0} 待确认 · ${(session.observations ?? []).slice(0, 2).map(observation => `[${observation.area}] ${observation.finding}`).join(' · ')}`),
+              ...(session.comparisons ?? []).slice(0, 2).map(comparison =>
+                React.createElement('div', { key: comparison.pack_id, style: { opacity: 0.65 } }, `↳ ${comparison.pack_name}: ${comparison.status}${comparison.scope === 'reference_only' ? '（仅参考，未启用）' : ''}`)),
+            )))
       : null,
     principles.length
       ? React.createElement('div', { style: listStyle },

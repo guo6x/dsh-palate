@@ -13,6 +13,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const expectedTools = new Set([
+  'palate_intake',
+  'palate_candidates',
+  'palate_decide',
   'palate_packs',
   'palate_seed',
   'palate_review',
@@ -101,7 +104,7 @@ try {
 
   apply(makeContext())
 
-  check('registers exactly the ten documented tools', registeredTools.size === expectedTools.size && [...expectedTools].every(name => registeredTools.has(name)))
+  check('registers exactly the thirteen documented tools', registeredTools.size === expectedTools.size && [...expectedTools].every(name => registeredTools.has(name)))
   check('all tools expose a DSH-compatible definition', [...registeredTools.values()].every(definition => (
     typeof definition.description === 'string'
     && definition.timeoutMs === 30000
@@ -115,7 +118,7 @@ try {
   check('starter palate includes examples for first review', initialStats.examples === 4 && initialStats.principles === 12)
 
   const packs = await tool('palate_packs').execute({})
-  check('palate_packs lists opt-in visual references', packs.packs.length === 2 && packs.packs.every(pack => !pack.applied))
+  check('palate_packs lists opt-in visual references and comparison rules', packs.packs.length === 2 && packs.packs.every(pack => !pack.applied && pack.reference_principles.length === 5))
   const seeded = await tool('palate_seed').execute({ pack_ids: ['apple-product-storytelling', 'x-direct-utility'] })
   check('palate_seed applies both visual references once', seeded.packs.length === 2 && seeded.packs.every(pack => !pack.already_applied) && seeded.stats.examples === 14 && seeded.stats.principles === 22 && seeded.stats.style_packs === 2)
   const applePrinciples = await tool('palate_principles').execute({ tag: 'apple' })
@@ -132,6 +135,37 @@ try {
   const learnedText = 'Keep dense dashboards scannable with a stable visual hierarchy.'
   const learned = await tool('palate_learn').execute({ principle: learnedText, category: 'hierarchy' })
   check('palate_learn executes through its host definition', learned.created === true)
+
+  const xRule = packs.packs.find(pack => pack.id === 'x-direct-utility').reference_principles[0].principle
+  const intake = await tool('palate_intake').execute({
+    subject: 'A sparse account-entry screenshot',
+    source: 'https://example.test/entry',
+    verdict: 'note',
+    summary: 'The identity is clear, but two equal primary buttons leave the entry path unresolved.',
+    observations: [
+      { area: 'hierarchy', finding: 'The identity mark establishes a direct first impression.', confidence: 'medium' },
+      { area: 'interaction', finding: 'Two equal filled buttons compete for the first account-entry action.', confidence: 'high' },
+    ],
+    proposed_principles: [{
+      principle: 'Rank one account-entry action above alternatives when users must choose a route.',
+      category: 'conversion',
+      evidence: 'The two filled actions have identical visual weight and placement.',
+      tags: ['entry-flow'],
+    }],
+    tags: ['entry-flow'],
+    comparisons: [{
+      pack_id: 'x-direct-utility',
+      status: 'conflicts',
+      evidence: 'The equal buttons conflict with a decisive single primary path.',
+      reference_principles: [xRule],
+    }],
+  })
+  const stagedStats = await tool('palate_stats').execute({})
+  check('palate_intake stages candidates without changing learned taste', intake.candidates.length === 2 && intake.candidates.every(candidate => candidate.status === 'pending') && intake.comparisons[0]?.scope === 'active_palate' && stagedStats.examples === 15 && stagedStats.principles === 23)
+  const queued = await tool('palate_candidates').execute({ status: 'pending' })
+  check('palate_candidates exposes pending session evidence', queued.candidates.length === 2 && queued.candidates.every(candidate => candidate.session_id === intake.session_id) && queued.training.stats.pending === 2)
+  const decided = await tool('palate_decide').execute({ candidate_ids: intake.candidates.map(candidate => candidate.candidate_id), decision: 'accept', note: 'Both candidates are explicitly confirmed.' })
+  check('palate_decide mutates taste only after explicit acceptance', decided.results.length === 2 && decided.results.every(result => result.status === 'accepted' && result.created) && decided.stats.examples === 16 && decided.stats.principles === 24)
 
   const listed = await tool('palate_list').execute({ tag: 'dashboard' })
   check('palate_list executes through its host definition', listed.examples.length === 1 && listed.examples[0].ref === 'product dashboard')
@@ -156,7 +190,7 @@ try {
   check('palate_effectiveness reports the recorded outcome', effectiveness.principles.some(principle => principle.principle === learnedText && principle.accepted === 1 && principle.acceptance_rate === 100))
 
   const stats = await tool('palate_stats').execute({})
-  check('palate_stats reports the complete host call chain', stats.examples === 15 && stats.principles === 23 && stats.style_packs === 2 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1)
+  check('palate_stats reports the complete host call chain', stats.examples === 16 && stats.principles === 24 && stats.style_packs === 2 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1 && stats.training_sessions === 1 && stats.accepted_candidates === 2)
 
   const route = registeredRoutes[0]
   const local = await request(route, '/palate/effectiveness', '127.0.0.1')
@@ -165,6 +199,8 @@ try {
   check('loopback reviews API exposes evidence refs', reviews.status === 200 && reviews.body[0]?.relevant_examples.length === 1 && reviews.body[0].relevant_examples[0].ref === 'product dashboard')
   const routePacks = await request(route, '/palate/packs', '127.0.0.1')
   check('loopback packs API reports applied references', routePacks.status === 200 && routePacks.body.length === 2 && routePacks.body.every(pack => pack.applied))
+  const training = await request(route, '/palate/training', '127.0.0.1')
+  check('loopback training API exposes staged decisions and comparisons', training.status === 200 && training.body.stats.accepted === 2 && training.body.sessions[0]?.comparisons[0]?.status === 'conflicts')
   const remote = await request(route, '/palate/effectiveness', '203.0.113.10')
   check('loopback API rejects remote requests', remote.status === 403 && remote.body.error === 'loopback only')
 } finally {

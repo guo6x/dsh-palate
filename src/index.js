@@ -36,6 +36,7 @@ export function apply(ctx) {
           if (suffix === '/stats') sendJson(res, 200, store.stats())
           else if (suffix === '/principles') sendJson(res, 200, store.listPrinciples())
           else if (suffix === '/packs') sendJson(res, 200, store.listStylePacks())
+          else if (suffix === '/training') sendJson(res, 200, store.trainingSummary())
           else if (suffix === '/effectiveness') sendJson(res, 200, store.listEffectiveness())
           else if (suffix === '/reviews') sendJson(res, 200, store.listReviews())
           else if (suffix === '/recent') sendJson(res, 200, store.listExamples({ limit: 12 }))
@@ -68,8 +69,105 @@ export function apply(ctx) {
     })
     const obj = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false })
     const str = description => ({ type: 'string', description })
+    const array = (items, description) => ({ type: 'array', items, description })
+    const observation = obj({
+      area: str('Visual dimension: hierarchy | typography | color | spacing | interaction | imagery | content | motion | accessibility | other.'),
+      finding: str('Concrete observed signal, not a generic adjective.'),
+      confidence: str("Optional evidence confidence: 'high' | 'medium' | 'low' (default medium)."),
+    }, ['area', 'finding'])
+    const proposedPrinciple = obj({
+      principle: str('A concrete reusable rule inferred from this analysis.'),
+      category: str('Optional category such as hierarchy, typography, or interaction.'),
+      evidence: str('The concrete observation that makes this rule worth proposing.'),
+      tags: array(str('Optional tag.'), 'Optional tags scoped to this proposed principle in addition to the session tags.'),
+    }, ['principle', 'evidence'])
+    const packComparison = obj({
+      pack_id: str('Exact pack ID returned by palate_packs.'),
+      status: str("Comparison result: 'aligned' | 'conflicts' | 'insufficient_evidence'."),
+      evidence: str('Concrete observation supporting the comparison, or what is missing.'),
+      reference_principles: array(str('Exact abstract pack principle returned by palate_packs.'), 'Relevant pack principles. Required for aligned/conflicts; optional when evidence is insufficient.'),
+    }, ['pack_id', 'status', 'evidence'])
 
     const defs = [
+      define(
+        'palate_intake',
+        'Stage a screenshot, URL, or design-description analysis as a visual-training session. First inspect the source with an appropriate browser or vision capability; this tool does not fetch or interpret a raw URL/image itself. It records hierarchy/typography/color/spacing/interaction observations, proposed examples and principles, and explicit style-pack comparisons as PENDING candidates. It NEVER changes learned taste until the user explicitly confirms candidates through palate_decide.',
+        obj({
+          subject: str('Human-readable name of the page, screen, or design being analyzed.'),
+          source: str('Optional URL, local path, or provenance for the screenshot/design.'),
+          verdict: str("Overall training judgment: 'good' | 'bad' | 'note'. Use note when the evidence is mixed."),
+          summary: str('Concise evidence-grounded summary of the visual analysis.'),
+          observations: array(observation, 'One to fifteen structured observations across visual dimensions.'),
+          proposed_principles: array(proposedPrinciple, 'Optional reusable principles to propose; these remain pending until accepted.'),
+          tags: array(str('Optional tag.'), 'Optional session tags, for example landing-page or dashboard.'),
+          comparisons: array(packComparison, 'Optional Apple/X or other style-pack alignment, conflict, or evidence-gap records.'),
+        }, ['subject', 'verdict', 'summary', 'observations']),
+        async args => store.createTrainingIntake({
+          subject: args.subject,
+          source: args.source ?? '',
+          verdict: args.verdict,
+          summary: args.summary,
+          observations: args.observations,
+          proposedPrinciples: args.proposed_principles ?? [],
+          tags: args.tags ?? [],
+          comparisons: args.comparisons ?? [],
+        }),
+        value => [{
+          type: 'text',
+          text: [
+            `Staged training session #${value.session_id}: ${value.subject}`,
+            `${value.candidates.length} pending candidate(s); nothing has been added to learned taste.`,
+            '',
+            'Candidates:',
+            ...value.candidates.map(candidate => `  - #${candidate.candidate_id} [${candidate.kind}] ${candidate.kind === 'example' ? `[${candidate.verdict}] ${candidate.ref}` : candidate.principle}`),
+            value.comparisons.length ? '' : null,
+            value.comparisons.length ? 'Style-pack comparison:' : null,
+            ...value.comparisons.map(comparison => `  - ${comparison.pack_name} [${comparison.scope}] ${comparison.status}: ${comparison.evidence}`),
+            '',
+            'Show this evidence to the user. Call palate_decide only after their explicit accept/reject decision.',
+          ].filter(Boolean).join('\n'),
+        }],
+      ),
+      define(
+        'palate_candidates',
+        'Inspect the visual-training queue. Candidates are staged by palate_intake and remain non-operative until an explicit palate_decide call. Use this to present pending evidence, source sessions, and previous decisions to the user.',
+        obj({
+          status: str("Optional filter: 'pending' | 'accepted' | 'rejected'. Defaults to all statuses."),
+          session_id: { type: 'number', description: 'Optional training session ID.' },
+          limit: { type: 'number', description: 'Max candidates to return (default 20, max 50).' },
+        }),
+        async args => ({
+          candidates: store.listTrainingCandidates({ status: args.status, sessionId: args.session_id, limit: args.limit }),
+          training: store.trainingSummary(),
+        }),
+        value => [{
+          type: 'text',
+          text: value.candidates.length
+            ? [
+                `Training queue: ${value.training.stats.pending} pending, ${value.training.stats.accepted} accepted, ${value.training.stats.rejected} rejected.`,
+                ...value.candidates.map(candidate => `  - #${candidate.candidate_id} [${candidate.status}/${candidate.kind}] ${candidate.kind === 'example' ? candidate.ref : candidate.principle} — session #${candidate.session_id}${candidate.session_subject ? `: ${candidate.session_subject}` : ''}`),
+              ].join('\n')
+            : 'No training candidates match that filter.',
+        }],
+      ),
+      define(
+        'palate_decide',
+        'Apply the user\'s explicit accept/reject decision to pending visual-training candidates. Accepting an example adds it to the corpus; accepting a principle adds it to codified taste if it is not already known. Rejecting preserves the auditable session but changes neither corpus nor principles. Do not call this merely because the analysis looks plausible: first present the candidate evidence and obtain a clear user decision.',
+        obj({
+          candidate_ids: array({ type: 'number' }, 'One or more pending candidate IDs returned by palate_intake or palate_candidates.'),
+          decision: str("User decision: 'accept' | 'reject'."),
+          note: str('Optional explanation of the user decision.'),
+        }, ['candidate_ids', 'decision']),
+        async args => store.decideTrainingCandidates({ candidateIds: args.candidate_ids, decision: args.decision, note: args.note ?? '' }),
+        value => [{
+          type: 'text',
+          text: [
+            `${value.decision === 'accept' ? 'Accepted' : 'Rejected'} ${value.results.length} training candidate(s).`,
+            ...value.results.map(result => `  - #${result.candidate_id} [${result.kind}] ${result.status}${value.decision === 'accept' ? (result.created ? ' — added to the palate' : ' — already known; decision recorded') : ' — kept only as an auditable decision'}`),
+            `Training desk: ${value.training.stats.pending} pending, ${value.training.stats.accepted} accepted, ${value.training.stats.rejected} rejected.`,
+          ].join('\n'),
+        }],
+      ),
       define(
         'palate_packs',
         'List opt-in visual-reference packs for the palate. Packs contain transparent, abstracted observations from public reference pages (not brand assets, copy, or reproduction templates). Check this before using palate_seed for a named style.',
@@ -79,7 +177,10 @@ export function apply(ctx) {
           type: 'text',
           text: [
             'Available visual-reference packs (opt-in; abstract principles only):',
-            ...value.packs.map(pack => `  - ${pack.id} — ${pack.name}: ${pack.examples} examples, ${pack.principles} principles, tags: ${pack.tags.join(', ')} [${pack.applied ? 'applied' : 'not applied'}]`),
+            ...value.packs.flatMap(pack => [
+              `  - ${pack.id} — ${pack.name}: ${pack.examples} examples, ${pack.principles} principles, tags: ${pack.tags.join(', ')} [${pack.applied ? 'applied' : 'not applied'}]`,
+              ...pack.reference_principles.map(principle => `      · [${principle.category}] ${principle.principle}`),
+            ]),
             '',
             'Use palate_seed with one or more exact pack_ids to add a pack. Applying a pack never replaces existing palate records.',
           ].join('\n'),
@@ -171,8 +272,9 @@ export function apply(ctx) {
           principle: str('The principle, stated as a concrete rule.'),
           category: str('Optional category (hierarchy, color, spacing, typography, ...).'),
           tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags. Tagged principles are included only for matching palate_review tags; untagged principles stay universal.' },
+          source: str('Optional provenance for this manually learned principle.'),
         }, ['principle']),
-        async args => store.addPrinciple(args.principle, args.category ?? '', args.tags ?? []),
+        async args => store.addPrinciple(args.principle, args.category ?? '', args.tags ?? [], args.source ?? ''),
         value => [{ type: 'text', text: value.created ? `Learned principle #${value.id}: ${value.principle}` : `Already known (principle #${value.id}).` }],
       ),
       define(
@@ -204,10 +306,10 @@ export function apply(ctx) {
       ),
       define(
         'palate_stats',
-        'Show how much taste the agent has accumulated and whether reviews have been evaluated: examples studied, principles distilled, applied style packs, reviews, and helpful/mixed/unhelpful feedback.',
+        'Show how much taste the agent has accumulated and whether reviews have been evaluated: examples studied, principles distilled, applied style packs, reviews, feedback, and the visual-training candidate queue.',
         obj({}),
         async () => store.stats(),
-        value => [{ type: 'text', text: `Palate: ${value.examples} examples (${value.good} good, ${value.bad} bad, ${value.notes} notes), ${value.principles} principles, ${value.style_packs} applied style pack(s), ${value.reviews} tracked reviews, ${value.feedback} feedback (${value.helpful} helpful, ${value.mixed} mixed, ${value.unhelpful} unhelpful).` }],
+        value => [{ type: 'text', text: `Palate: ${value.examples} examples (${value.good} good, ${value.bad} bad, ${value.notes} notes), ${value.principles} principles, ${value.style_packs} applied style pack(s), ${value.reviews} tracked reviews, ${value.feedback} feedback (${value.helpful} helpful, ${value.mixed} mixed, ${value.unhelpful} unhelpful), training desk ${value.training_sessions} session(s): ${value.pending_candidates} pending / ${value.accepted_candidates} accepted / ${value.rejected_candidates} rejected.` }],
       ),
     ]
     for (const def of defs) {

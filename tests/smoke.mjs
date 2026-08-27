@@ -26,7 +26,7 @@ try {
   check('seed: principles loaded', seeded.length === SEED_PRINCIPLES.length, `${seeded.length} principles`)
   const starterExamples = store.listExamples()
   check('seed: examples loaded for first review', starterExamples.length === SEED_EXAMPLES.length && starterExamples.every(example => example.source === 'dsh-palate starter palate'), `${starterExamples.length} examples`)
-  check('seed: mirrors written', existsSync(join(dir, 'principles.md')) && existsSync(join(dir, 'taste.md')))
+  check('seed: mirrors written', existsSync(join(dir, 'principles.md')) && existsSync(join(dir, 'taste.md')) && existsSync(join(dir, 'training.md')))
 
   // add examples
   const good = store.addExample({ ref: 'stripe.com homepage', verdict: 'good', reason: 'clear hierarchy, restrained palette, compact dashboard navigation', tags: ['landing', 'light', 'dashboard'] })
@@ -133,6 +133,63 @@ try {
   const stylePrinciplesMd = readFileSync(join(dir, 'principles.md'), 'utf8')
   check('packs: mirrors expose source examples and tags', styleTasteMd.includes('Apple reference: single-subject launch hero') && stylePrinciplesMd.includes('tags: apple, product-storytelling'))
 
+  // The visual-training desk stages structured analysis first; it cannot silently teach the palate.
+  const appleLaunchRule = STYLE_PACKS.find(pack => pack.id === 'apple-product-storytelling').principles[0].principle
+  const intake = store.createTrainingIntake({
+    subject: 'B2B analytics landing page screenshot',
+    source: 'https://example.test/analytics',
+    verdict: 'note',
+    summary: 'A clear product proof block leads the page, but the CTA group gives three actions the same visual weight.',
+    observations: [
+      { area: 'hierarchy', finding: 'The proof-led product screenshot is the first visual subject and the only full-width image.', confidence: 'high' },
+      { area: 'interaction', finding: 'Demo, Start free, and Contact sales use equal filled buttons in one row.', confidence: 'high' },
+      { area: 'spacing', finding: 'The next product story starts after a calm visual reset instead of competing with the hero.', confidence: 'medium' },
+    ],
+    proposedPrinciples: [
+      { principle: 'When a landing page has multiple CTA paths, visibly rank one commitment above alternatives.', category: 'conversion', evidence: 'All three CTA buttons have the same fill, size, and placement, so no primary route is clear.', tags: ['landing-page'] },
+      { principle: 'Let product proof lead the first viewport before decorative campaign treatment.', category: 'product-storytelling', evidence: 'The full-width product screenshot explains the offer before ornamental graphics appear.' },
+    ],
+    tags: ['landing-page', 'b2b'],
+    comparisons: [{
+      pack_id: 'apple-product-storytelling',
+      status: 'aligned',
+      evidence: 'The first viewport has one proof-led product subject and a visual reset before the next story.',
+      reference_principles: [appleLaunchRule],
+    }],
+  })
+  check('training: intake stages example and principle candidates without mutating taste', intake.candidates.length === 3 && intake.candidates.every(candidate => candidate.status === 'pending') && store.stats().examples === 16 && store.stats().principles === 23)
+  check('training: preserves structured observations and active-pack comparison', intake.observations.length === 3 && intake.comparisons[0]?.scope === 'active_palate' && intake.comparisons[0]?.status === 'aligned')
+  const pendingTraining = store.listTrainingCandidates({ status: 'pending' })
+  check('training: pending queue is queryable with source session', pendingTraining.length === 3 && pendingTraining.every(candidate => candidate.session_id === intake.session_id) && pendingTraining[0].session_subject === intake.subject)
+  const acceptedTraining = store.decideTrainingCandidates({
+    candidateIds: [intake.candidates[0].candidate_id, intake.candidates[1].candidate_id],
+    decision: 'accept',
+    note: 'Keep the evidence-backed example and the CTA ranking rule.',
+  })
+  check('training: explicit acceptance alone mutates corpus and principles', acceptedTraining.results.every(result => result.status === 'accepted') && acceptedTraining.results.every(result => result.created) && store.stats().examples === 17 && store.stats().principles === 24 && store.stats().accepted_candidates === 2 && store.stats().pending_candidates === 1)
+  const acceptedExample = store.listExamples({ tag: 'b2b' }).find(example => example.ref === intake.subject)
+  const acceptedRule = store.listPrinciples().find(principle => principle.principle === intake.candidates[1].principle)
+  check('training: accepted records retain session provenance', acceptedExample?.source.includes(`training session #${intake.session_id}`) && acceptedRule?.source.includes(`training session #${intake.session_id}`))
+  const rejectedTraining = store.decideTrainingCandidates({ candidateIds: [intake.candidates[2].candidate_id], decision: 'reject', note: 'This one is too broad for the current palate.' })
+  check('training: rejection is auditable but never adds taste', rejectedTraining.results[0]?.status === 'rejected' && store.stats().examples === 17 && store.stats().principles === 24 && store.stats().rejected_candidates === 1)
+  const trainingSummary = store.trainingSummary()
+  check('training: summary exposes resolved queue state', trainingSummary.stats.sessions === 1 && trainingSummary.stats.pending === 0 && trainingSummary.stats.accepted === 2 && trainingSummary.stats.rejected === 1 && trainingSummary.sessions[0]?.candidate_counts.rejected === 1)
+  let repeatDecision = false
+  try { store.decideTrainingCandidates({ candidateIds: [intake.candidates[0].candidate_id], decision: 'accept' }) } catch { repeatDecision = true }
+  check('training: candidates cannot be decided twice', repeatDecision)
+  const trainingMd = readFileSync(join(dir, 'training.md'), 'utf8')
+  check('training: mirror preserves comparison, candidates, and decision note', trainingMd.includes('Apple reference: product storytelling') && trainingMd.includes('candidate #') && trainingMd.includes('Keep the evidence-backed example'))
+
+  const referenceOnlyDir = mkdtempSync(join(tmpdir(), 'dsh-palate-reference-only-'))
+  const referenceOnly = new PalateStore(referenceOnlyDir)
+  const referenceOnlySession = referenceOnly.createTrainingIntake({
+    subject: 'Untested signup screen', verdict: 'note', summary: 'The screenshot is too cropped to judge the primary route.',
+    observations: [{ area: 'interaction', finding: 'Only a partial input field is visible; no primary action is shown.', confidence: 'low' }],
+    comparisons: [{ pack_id: 'x-direct-utility', status: 'insufficient_evidence', evidence: 'The screenshot does not show enough of the entry flow to assess action ranking.', reference_principles: [] }],
+  })
+  check('training: reference-only comparison never auto-applies a style pack', referenceOnlySession.comparisons[0]?.scope === 'reference_only' && referenceOnly.stats().style_packs === 0 && referenceOnly.stats().examples === SEED_EXAMPLES.length)
+  referenceOnly.close()
+
   const examplesBeforeReopen = store.stats().examples
   store.close()
   const reopened = new PalateStore(dir)
@@ -166,7 +223,7 @@ try {
   const migrated = new PalateStore(legacyDir)
   const legacyPrinciple = migrated.listPrinciples().find(principle => principle.principle === 'Legacy user principle stays intact.')
   const migratedPack = migrated.applyStylePacks(['apple-product-storytelling'])
-  check('migration: adds tagged-principle support without replacing old taste', legacyPrinciple?.tags.length === 0 && migrated.listExamples({ tag: 'legacy' }).some(example => example.ref === 'legacy user example') && migratedPack.stats.style_packs === 1)
+  check('migration: adds source and tagged-principle support without replacing old taste', legacyPrinciple?.tags.length === 0 && legacyPrinciple?.source === '' && migrated.listExamples({ tag: 'legacy' }).some(example => example.ref === 'legacy user example') && migratedPack.stats.style_packs === 1)
   migrated.close()
 } catch (error) {
   failed++

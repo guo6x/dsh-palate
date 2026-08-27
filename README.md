@@ -10,15 +10,19 @@ Most design-review plugins ship a static ruleset and apply it forever — use th
 
 Taste is not a gift — it's **pattern recognition built from exposure**. See enough good and bad design, and the rules emerge. dsh-palate turns that into a mechanism an agent can actually use:
 
-1. **Feed** — record designs you judged good or bad, and *why*
-2. **Distill** — recurring lessons become codified principles
-3. **Review** — critique a new design against the accumulated taste, not a generic checklist
-4. **Calibrate** — record which recommendations actually helped; only confirmed helpful principles gain evidence, so the palate compounds honestly
+1. **Observe** — inspect a screenshot, URL, or design and name concrete visual evidence
+2. **Stage** — turn that analysis into examples and principles that wait in a reviewable candidate queue
+3. **Confirm** — only an explicit accept/reject decision changes the corpus; rejected ideas stay visible without changing taste
+4. **Review** — critique a new design against the accumulated taste, not a generic checklist
+5. **Calibrate** — record which recommendations actually helped; only confirmed helpful principles gain evidence, so the palate compounds honestly
 
 ## What the agent gets
 
 | Tool | What it does |
 |---|---|
+| `palate_intake` | Stage a structured visual analysis as **pending** example/principle candidates; it never changes taste by itself |
+| `palate_candidates` | Inspect pending, accepted, or rejected visual-training candidates and their source sessions |
+| `palate_decide` | Apply the user’s explicit accept/reject decision; this is the only candidate-to-palate mutation path |
 | `palate_review` | Assemble the accumulated taste (principles + relevant past examples) as context, so the agent critiques grounded in *learned* judgment |
 | `palate_feedback` | Use a `review_id` to record whether a critique helped and which principles were accepted or rejected; only accepted principles gain evidence |
 | `palate_add` | Feed an example (`good`/`bad`/`note` + reason + tags) into the corpus — grows the palate |
@@ -47,25 +51,51 @@ For example, ask an agent:
 
 > Inspect `palate_packs`, then apply `apple-product-storytelling` and `x-direct-utility` with `palate_seed`. Review our product-launch page with tag `apple`, and separately review our sign-in entry flow with tag `x`. Cite the evidence; do not copy either brand’s assets, copy, or identity.
 
+## Visual training desk: observe → compare → confirm
+
+`palate_intake` is deliberately a **staging** tool, not a hidden auto-learning button. First have the agent inspect a screenshot or page with a browser/vision capability. Then it records a compact, structured analysis: hierarchy, typography, color, spacing, interaction, and any other relevant dimension. The intake creates one example candidate plus any proposed principles; none are added to the corpus yet.
+
+It can also record an explicit comparison with Apple, X, or future reference packs:
+
+- `aligned` — the observed evidence supports named abstract reference principles
+- `conflicts` — the evidence conflicts with named reference principles
+- `insufficient_evidence` — the screenshot/page does not show enough to judge
+
+Comparing against a pack that has not been seeded is allowed for research, but the record is marked **reference-only** and does not activate or inject the pack. This keeps analysis separate from style adoption.
+
+Use `palate_candidates` to show the evidence and candidate IDs to the user. Only after they clearly say accept or reject should the agent call `palate_decide`. Accepted records preserve their training-session provenance; rejected records remain in `training.md` so a team can revisit the judgment later.
+
 ## How it works
 
 ```
-palate_add (good/bad + why)  ──▶  taste corpus (SQLite + Markdown mirror)
-palate_learn (new rule)       ──▶  codified principles
-palate_review (a design)      ──▶  review_id + principles + relevant examples  ──▶  agent writes grounded critique
-        ▲                                                                            │
+inspect screenshot / URL with vision or browser
+        │
+        ▼
+palate_intake (structured observations + pack comparison)
+        │
+        ▼
+pending example / principle candidates ──▶ palate_candidates ──▶ user explicitly accepts or rejects
+        │                                                                  │
+        └──────────────────────────── palate_decide ◀─────────────────────┘
+                                           │
+                   accepted only ─────────┼───────── rejected stays auditable in training.md
+                                           ▼
+                    taste corpus + codified principles
+                                           │
+palate_review (a design) ──▶ review_id + learned evidence ──▶ agent writes grounded critique
+        ▲                                                               │
         └── palate_feedback (accept/reject + why) ──▶ effectiveness + accepted-principle evidence ─┘
 ```
 
-- **Storage**: `node:sqlite` (built into Node ≥ 22) at `$DSH_HOME/palate/`, plus human-readable `taste.md` / `principles.md` mirrors. Zero runtime dependencies.
+- **Storage**: `node:sqlite` (built into Node ≥ 22) at `$DSH_HOME/palate/`, plus human-readable `taste.md` / `principles.md` / `feedback.md` / `training.md` mirrors. Zero runtime dependencies.
 - **Retrieval**: a review ranks examples against the current description using local words, tags, and Chinese word fragments; when no precedent is relevant, it leaves the evidence empty instead of padding with recent entries.
 - **Feedback loop**: every `palate_review` snapshots its evidence; `palate_feedback` records the outcome, while `feedback.md` and the panel show actual acceptance/rejection data.
-- **The panel**: a draggable overlay shows examples studied, principles distilled, recent review subjects, the exact example refs cited by each review, and recent judgments.
-- **Vision pairing**: feed it screenshots by reading them with a vision tool first (e.g. `modlens_read_image`), then pass the description to `palate_review`.
+- **The panel**: a draggable overlay shows examples studied, principles distilled, the visual-training queue, recent review subjects, the exact example refs cited by each review, and recent judgments.
+- **Vision pairing**: inspect screenshots with a vision tool first (e.g. `modlens_read_image`) or pages with a browser, then pass the evidence to `palate_intake` or `palate_review`. The plugin never fetches, screenshots, or claims to see a raw URL by itself.
 
 ## Honest framing
 
-This is **accumulated retrieval + codified principles + explicit feedback**, not model fine-tuning. The plugin supplies learned taste as context; *the model* renders the critique. Only a user/agent-confirmed `palate_feedback` adds evidence to a principle, keeping judgment auditable through `taste.md`, `principles.md`, and `feedback.md` without retraining anything.
+This is **accumulated retrieval + codified principles + explicit decisions and feedback**, not model fine-tuning. The plugin supplies learned taste as context; *the model* renders the critique. `palate_intake` does not count as learning: only a user-confirmed `palate_decide` adds a candidate, and only a user/agent-confirmed `palate_feedback` adds effectiveness evidence. That keeps judgment auditable through `taste.md`, `principles.md`, `feedback.md`, and `training.md` without retraining anything.
 
 ## Install — copy, paste, confirm
 
@@ -74,7 +104,7 @@ This is **accumulated retrieval + codified principles + explicit feedback**, not
 dsh plugin --profile web add github:guo6x/dsh-palate
 ```
 
-Restart a running `dsh web` process, then refresh the page. **Installation is complete when a 👁️ button appears at the bottom of the sidebar.** Click it to see the starter palate, its principles, and its feedback history.
+Restart a running `dsh web` process, then refresh the page. **Installation is complete when a 👁️ button appears at the bottom of the sidebar.** Click it to see the starter palate, its principles, feedback history, and any staged training candidates.
 
 Requirements: the DeepSeek Harness web profile and Node ≥ 22. The plugin uses only local SQLite storage — no account, API key, or embedding service is required.
 
@@ -87,6 +117,14 @@ Start a new chat and paste this safe, local-first task:
 > Build our first taste record for a dense analytics dashboard. Use `palate_add` to save one **bad** example: “all 12 KPI cards have equal visual weight, so the decision signal is buried”; tag it `dashboard, hierarchy`. Then use `palate_review` to critique “an analytics dashboard with twelve equal KPI cards, one primary revenue metric, and a small trend chart.” Explain which learned principles you used.
 
 The response should name the matched record and starter principles instead of applying a generic checklist. Open the 👁️ panel to see the example count grow and the new review appear. If you adopt a recommendation, ask the agent to record `palate_feedback` for that review; only confirmed helpful principles gain evidence.
+
+### Try the training desk safely
+
+After the agent has actually inspected a screenshot or page, paste this task:
+
+> Analyze the inspected product landing page with `palate_intake`. Record at least hierarchy, typography, color, spacing, and interaction observations; stage one example candidate and up to two concrete principle candidates. Compare it with `apple-product-storytelling` as `aligned`, `conflicts`, or `insufficient_evidence`, citing the exact reference principle(s). Show me the pending candidates and **do not call `palate_decide` until I explicitly choose accept or reject**.
+
+The 👁️ panel should show a new training session and pending count, while the example and principle totals stay unchanged. Once you make an explicit decision, the agent can call `palate_decide`; `training.md` preserves both the analysis and the result.
 
 ### If the 👁️ button is missing
 
@@ -108,6 +146,7 @@ MIT licensed. Ideas and examples welcome — open an issue.
 
 - **No embedding-based semantic matching in the plugin itself** — it retrieves locally by tags, words, and Chinese word fragments; the model does the deeper reasoning from the assembled context.
 - **Feedback is explicit** — the plugin does not guess whether a user adopted a recommendation; call `palate_feedback` after a review to form effectiveness data.
-- **Markdown mirrors are read-only exports** for v0.1 (human edit-and-merge-back is planned).
-- **Vision is delegated** — pair with a vision tool to review screenshots.
+- **Training decisions are explicit** — `palate_intake` stages evidence but does not inspect a raw URL/image or learn automatically; `palate_decide` needs a clear human accept/reject decision.
+- **Markdown mirrors are read-only exports** (human edit-and-merge-back is planned).
+- **Vision is delegated** — pair with a vision tool to inspect screenshots, or a browser to inspect URLs, before staging evidence.
 - **Reference packs are not cloning kits** — they preserve observable layout and hierarchy lessons, not protected assets, copy, or a promise that every page from a referenced brand is appropriate for every product.
