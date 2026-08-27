@@ -13,6 +13,7 @@ import { readFile } from 'node:fs/promises'
 const source = await readFile(new URL('../src/client/index.jsx', import.meta.url), 'utf8')
 assert.match(source, /top: 'calc\(4\.5rem \+ 390px\)'/)
 assert.match(source, /maxHeight: 'calc\(100vh - 7rem\)'/)
+assert.match(source, /getJson\('\/palate\/packs'\)/)
 
 let entry
 globalThis.window = {

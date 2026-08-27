@@ -35,6 +35,7 @@ export function apply(ctx) {
         try {
           if (suffix === '/stats') sendJson(res, 200, store.stats())
           else if (suffix === '/principles') sendJson(res, 200, store.listPrinciples())
+          else if (suffix === '/packs') sendJson(res, 200, store.listStylePacks())
           else if (suffix === '/effectiveness') sendJson(res, 200, store.listEffectiveness())
           else if (suffix === '/reviews') sendJson(res, 200, store.listReviews())
           else if (suffix === '/recent') sendJson(res, 200, store.listExamples({ limit: 12 }))
@@ -70,11 +71,43 @@ export function apply(ctx) {
 
     const defs = [
       define(
+        'palate_packs',
+        'List opt-in visual-reference packs for the palate. Packs contain transparent, abstracted observations from public reference pages (not brand assets, copy, or reproduction templates). Check this before using palate_seed for a named style.',
+        obj({}),
+        async () => ({ packs: store.listStylePacks(), stats: store.stats() }),
+        value => [{
+          type: 'text',
+          text: [
+            'Available visual-reference packs (opt-in; abstract principles only):',
+            ...value.packs.map(pack => `  - ${pack.id} — ${pack.name}: ${pack.examples} examples, ${pack.principles} principles, tags: ${pack.tags.join(', ')} [${pack.applied ? 'applied' : 'not applied'}]`),
+            '',
+            'Use palate_seed with one or more exact pack_ids to add a pack. Applying a pack never replaces existing palate records.',
+          ].join('\n'),
+        }],
+      ),
+      define(
+        'palate_seed',
+        'Explicitly add one or more visual-reference packs to the local palate. Use palate_packs first. Packs add abstract, auditable examples and principles; they never copy brand assets or overwrite existing user taste. Use the returned tags in palate_review to keep reference styles separated.',
+        obj({
+          pack_ids: { type: 'array', items: { type: 'string' }, description: 'One or more exact IDs returned by palate_packs.' },
+        }, ['pack_ids']),
+        async args => store.applyStylePacks(args.pack_ids),
+        value => [{
+          type: 'text',
+          text: [
+            ...value.packs.map(pack => pack.already_applied
+              ? `Kept ${pack.name}: it was already applied.`
+              : `Applied ${pack.name}: added ${pack.examples_added} examples and ${pack.principles_added} principles.`),
+            `Palate now has ${value.stats.examples} examples, ${value.stats.principles} principles, and ${value.stats.style_packs} applied style pack(s).`,
+          ].join('\n'),
+        }],
+      ),
+      define(
         'palate_review',
-        'Create a tracked design review from the agent\'s accumulated taste. Returns a review_id, codified principles, relevant past examples (good to emulate, bad to avoid), and guidance. YOU then write the actual critique grounded in this learned taste. After the user responds, call palate_feedback with the review_id to record whether the advice helped.',
+        'Create a tracked design review from the agent\'s accumulated taste. Returns a review_id, codified principles, relevant past examples (good to emulate, bad to avoid), and guidance. A tag filters both examples and tagged style-pack principles while keeping universal principles. YOU then write the actual critique grounded in this learned taste. After the user responds, call palate_feedback with the review_id to record whether the advice helped.',
         obj({
           subject: str('Description of the design/UI to critique (or the path/url of an image you have already described).'),
-          tag: str('Optional tag to focus which past examples to draw on.'),
+          tag: str('Optional tag to focus examples and style-specific principles (for example apple or x after applying a visual-reference pack).'),
         }, ['subject']),
         async args => store.createReview(args.subject, { tag: args.tag }),
         value => [{
@@ -137,8 +170,9 @@ export function apply(ctx) {
         obj({
           principle: str('The principle, stated as a concrete rule.'),
           category: str('Optional category (hierarchy, color, spacing, typography, ...).'),
+          tags: { type: 'array', items: { type: 'string' }, description: 'Optional tags. Tagged principles are included only for matching palate_review tags; untagged principles stay universal.' },
         }, ['principle']),
-        async args => store.addPrinciple(args.principle, args.category ?? ''),
+        async args => store.addPrinciple(args.principle, args.category ?? '', args.tags ?? []),
         value => [{ type: 'text', text: value.created ? `Learned principle #${value.id}: ${value.principle}` : `Already known (principle #${value.id}).` }],
       ),
       define(
@@ -154,10 +188,10 @@ export function apply(ctx) {
       ),
       define(
         'palate_principles',
-        'List the codified design principles (the agent\'s current taste), ordered by evidence.',
-        obj({}),
-        async () => ({ principles: store.listPrinciples(), stats: store.stats() }),
-        value => [{ type: 'text', text: value.principles.map(p => `[${p.category}] ${p.principle} (evidence ${p.evidence})`).join('\n') }],
+        'List the codified design principles (the agent\'s current taste), ordered by evidence. Pass a tag to see universal principles plus principles scoped to that visual style.',
+        obj({ tag: str('Optional style tag, for example apple or x.') }),
+        async args => ({ principles: store.listPrinciples({ tag: args.tag }), stats: store.stats() }),
+        value => [{ type: 'text', text: value.principles.map(p => `[${p.category}] ${p.principle} (evidence ${p.evidence})${p.tags.length ? ` [tags: ${p.tags.join(', ')}]` : ''}`).join('\n') }],
       ),
       define(
         'palate_effectiveness',
@@ -170,10 +204,10 @@ export function apply(ctx) {
       ),
       define(
         'palate_stats',
-        'Show how much taste the agent has accumulated and whether reviews have been evaluated: examples studied, principles distilled, reviews, and helpful/mixed/unhelpful feedback.',
+        'Show how much taste the agent has accumulated and whether reviews have been evaluated: examples studied, principles distilled, applied style packs, reviews, and helpful/mixed/unhelpful feedback.',
         obj({}),
         async () => store.stats(),
-        value => [{ type: 'text', text: `Palate: ${value.examples} examples (${value.good} good, ${value.bad} bad, ${value.notes} notes), ${value.principles} principles, ${value.reviews} tracked reviews, ${value.feedback} feedback (${value.helpful} helpful, ${value.mixed} mixed, ${value.unhelpful} unhelpful).` }],
+        value => [{ type: 'text', text: `Palate: ${value.examples} examples (${value.good} good, ${value.bad} bad, ${value.notes} notes), ${value.principles} principles, ${value.style_packs} applied style pack(s), ${value.reviews} tracked reviews, ${value.feedback} feedback (${value.helpful} helpful, ${value.mixed} mixed, ${value.unhelpful} unhelpful).` }],
       ),
     ]
     for (const def of defs) {

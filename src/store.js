@@ -67,6 +67,101 @@ export const SEED_EXAMPLES = [
   },
 ]
 
+/**
+ * Opt-in visual-reference packs. These record transferable observations from
+ * public pages, not brand assets, copy, or templates to reproduce. Keeping
+ * them explicit prevents a new reference style from silently changing an
+ * existing user's palate.
+ */
+export const STYLE_PACKS = [
+  {
+    id: 'apple-product-storytelling',
+    name: 'Apple reference: product storytelling',
+    description: 'A calm product-launch rhythm: one visual subject, proof-led imagery, restrained choices, and clear reset space between stories.',
+    tags: ['apple', 'product-storytelling'],
+    source: 'Public reference: https://www.apple.com/ (observed 2026-08-27; abstract principles only, with no Apple assets or copy).',
+    principles: [
+      { principle: 'Give each launch viewport one visual subject, a short claim, one readable supporting line, and one clear next action.', category: 'product-storytelling' },
+      { principle: 'Use full-bleed product imagery as evidence; if the image could belong to any brand, it is decoration rather than proof.', category: 'product-storytelling' },
+      { principle: 'Keep global navigation quiet while the current product story owns the visual field.', category: 'hierarchy' },
+      { principle: 'When visitors are near a purchase, pair a learning action with one transaction action; otherwise keep the choice singular.', category: 'conversion' },
+      { principle: 'Sequence multiple offerings as distinct mini-campaigns with reset space between them instead of making them compete in one equal-weight grid.', category: 'narrative' },
+    ],
+    examples: [
+      {
+        ref: 'Apple reference: single-subject launch hero',
+        verdict: 'good',
+        reason: 'A single large visual subject, a short event claim, one supporting sentence, and one action make the first decision immediate.',
+      },
+      {
+        ref: 'Apple reference: quiet global navigation',
+        verdict: 'good',
+        reason: 'The navigation remains compact and low-noise while the hero carries the page’s strongest contrast and emotional weight.',
+      },
+      {
+        ref: 'Apple reference: learn-to-buy CTA pair',
+        verdict: 'good',
+        reason: 'Product sections separate education from transaction with a restrained Learn more / Buy-or-preorder pairing.',
+      },
+      {
+        ref: 'Derived counterexample: cinematic hero without product proof',
+        verdict: 'bad',
+        reason: 'Large type, glow, and whitespace cannot create product conviction when the image offers no concrete evidence of the thing being sold.',
+        source: 'dsh-palate Apple-reference counterexample; not an Apple page.',
+      },
+      {
+        ref: 'Derived counterexample: every product fights for the hero',
+        verdict: 'bad',
+        reason: 'Giving every offering equal scale and visual drama removes the pause that lets one product story land before the next begins.',
+        source: 'dsh-palate Apple-reference counterexample; not an Apple page.',
+      },
+    ],
+  },
+  {
+    id: 'x-direct-utility',
+    name: 'X reference: direct utility',
+    description: 'A direct entry-flow language: stark contrast, a decisive identity field, ranked actions, and nearly invisible secondary detail.',
+    tags: ['x', 'direct-utility'],
+    source: 'Public reference: https://x.com/ (observed 2026-08-27; abstract principles only, with no X assets or copy).',
+    principles: [
+      { principle: 'Use a stark visual identity only when the action column is simple enough to remain immediately usable.', category: 'hierarchy' },
+      { principle: 'In an entry flow, rank one primary path above alternatives; secondary methods should support rather than compete.', category: 'conversion' },
+      { principle: 'Use monochrome contrast to establish hierarchy; reserve accent color for focus, errors, and irreversible states.', category: 'color' },
+      { principle: 'Keep legal and transactional detail at the edge of attention after the primary task is already clear.', category: 'clarity' },
+      { principle: 'Let layout, spacing, and type carry the product’s conviction instead of adding ornamental chrome.', category: 'originality' },
+    ],
+    examples: [
+      {
+        ref: 'X reference: direct black-and-white entry screen',
+        verdict: 'good',
+        reason: 'A short headline, a giant identity field, and a compact action column establish a decisive first impression without visual clutter.',
+      },
+      {
+        ref: 'X reference: ranked sign-in routes',
+        verdict: 'good',
+        reason: 'The primary continuation path receives the strongest fill while alternatives and the manual field route are visibly secondary.',
+      },
+      {
+        ref: 'X reference: secondary links at the edge of attention',
+        verdict: 'good',
+        reason: 'Legal and footer links remain available but do not interrupt the account-entry decision.',
+      },
+      {
+        ref: 'Derived counterexample: monochrome without state hierarchy',
+        verdict: 'bad',
+        reason: 'A black-and-white interface becomes inert when primary action, input focus, disabled states, and errors all look equally quiet.',
+        source: 'dsh-palate X-reference counterexample; not an X page.',
+      },
+      {
+        ref: 'Derived counterexample: identity mark blocks the primary task',
+        verdict: 'bad',
+        reason: 'A large logo helps only when it frames the action; it fails when the task is pushed below the fold or loses visual priority.',
+        source: 'dsh-palate X-reference counterexample; not an X page.',
+      },
+    ],
+  },
+]
+
 const VERDICTS = new Set(['good', 'bad', 'note'])
 const REVIEW_OUTCOMES = new Set(['helpful', 'mixed', 'unhelpful'])
 const MAX_FEEDBACK_PRINCIPLES = 30
@@ -117,8 +212,13 @@ export class PalateStore {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         principle TEXT NOT NULL UNIQUE,
         category TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
         evidence INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS applied_style_packs (
+        pack_id TEXT PRIMARY KEY,
+        applied_at TEXT DEFAULT (datetime('now'))
       );
       CREATE TABLE IF NOT EXISTS reviews (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,10 +245,14 @@ export class PalateStore {
       );
       PRAGMA foreign_keys = ON;
     `)
+    const principleColumns = this.db.prepare('PRAGMA table_info(principles)').all()
+    if (!principleColumns.some(column => column.name === 'tags')) {
+      this.db.exec("ALTER TABLE principles ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'")
+    }
     const { c } = this.db.prepare('SELECT COUNT(*) AS c FROM principles').get()
     if (c === 0) {
-      const ins = this.db.prepare('INSERT INTO principles (principle, category) VALUES (?, ?)')
-      for (const p of SEED_PRINCIPLES) ins.run(p.principle, p.category)
+      const ins = this.db.prepare('INSERT INTO principles (principle, category, tags) VALUES (?, ?, ?)')
+      for (const p of SEED_PRINCIPLES) ins.run(p.principle, p.category, JSON.stringify(p.tags ?? []))
     }
     const { c: examples } = this.db.prepare('SELECT COUNT(*) AS c FROM taste').get()
     if (examples === 0) {
@@ -161,12 +265,13 @@ export class PalateStore {
   addExample({ ref, verdict, reason = '', tags = [], source = '' }) {
     if (!ref) throw new Error('palate: ref is required')
     if (!VERDICTS.has(verdict)) throw new Error(`palate: verdict must be one of ${[...VERDICTS].join(', ')}`)
-    const tagsJson = JSON.stringify(tags)
+    const normalizedTags = normalizeTags(tags)
+    const tagsJson = JSON.stringify(normalizedTags)
     const res = this.db
       .prepare('INSERT INTO taste (ref, verdict, reason, tags, source) VALUES (?, ?, ?, ?, ?)')
       .run(ref, verdict, reason, tagsJson, source)
     this.writeMirrors()
-    return { id: Number(res.lastInsertRowid), ref, verdict, reason, tags, source }
+    return { id: Number(res.lastInsertRowid), ref, verdict, reason, tags: normalizedTags, source }
   }
 
   listExamples({ verdict, tag, limit = 50 } = {}) {
@@ -180,16 +285,18 @@ export class PalateStore {
     const rows = this.db.prepare(sql).all(...params)
     const out = rows.map(r => ({ ...r, tags: safeParse(r.tags) }))
     if (!tag) return out
-    return out.filter(e => e.tags.includes(tag))
+    const normalizedTag = normalizeTag(tag, 'tag')
+    return out.filter(e => e.tags.includes(normalizedTag))
   }
 
-  addPrinciple(principle, category = '') {
+  addPrinciple(principle, category = '', tags = []) {
     if (!principle) throw new Error('palate: principle is required')
-    const existing = this.db.prepare('SELECT id FROM principles WHERE principle = ?').get(principle)
-    if (existing) return { id: existing.id, principle, created: false }
-    const res = this.db.prepare('INSERT INTO principles (principle, category) VALUES (?, ?)').run(principle, category)
+    const normalizedTags = normalizeTags(tags)
+    const existing = this.db.prepare('SELECT id, category, tags FROM principles WHERE principle = ?').get(principle)
+    if (existing) return { id: existing.id, principle, category: existing.category, tags: safeParse(existing.tags), created: false }
+    const res = this.db.prepare('INSERT INTO principles (principle, category, tags) VALUES (?, ?, ?)').run(principle, category, JSON.stringify(normalizedTags))
     this.writeMirrors()
-    return { id: Number(res.lastInsertRowid), principle, category, created: true }
+    return { id: Number(res.lastInsertRowid), principle, category, tags: normalizedTags, created: true }
   }
 
   /** Bump the evidence count for principles an example supports. */
@@ -203,8 +310,12 @@ export class PalateStore {
     return n
   }
 
-  listPrinciples() {
-    return this.db.prepare('SELECT * FROM principles ORDER BY evidence DESC, id ASC').all()
+  listPrinciples({ tag } = {}) {
+    const principles = this.db.prepare('SELECT * FROM principles ORDER BY evidence DESC, id ASC').all()
+      .map(principle => ({ ...principle, tags: safeParse(principle.tags) }))
+    if (!tag) return principles
+    const normalizedTag = normalizeTag(tag, 'tag')
+    return principles.filter(principle => principle.tags.length === 0 || principle.tags.includes(normalizedTag))
   }
 
   stats() {
@@ -217,14 +328,73 @@ export class PalateStore {
     const helpful = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='helpful'").get().c
     const mixed = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='mixed'").get().c
     const unhelpful = this.db.prepare("SELECT COUNT(*) AS c FROM review_feedback WHERE outcome='unhelpful'").get().c
-    return { examples, good, bad, notes: examples - good - bad, principles, reviews, feedback, helpful, mixed, unhelpful }
+    const stylePacks = this.db.prepare('SELECT COUNT(*) AS c FROM applied_style_packs').get().c
+    return { examples, good, bad, notes: examples - good - bad, principles, reviews, feedback, helpful, mixed, unhelpful, style_packs: stylePacks }
+  }
+
+  /** List the available opt-in visual-reference packs and whether this palate has applied them. */
+  listStylePacks() {
+    const applied = new Set(this.db.prepare('SELECT pack_id FROM applied_style_packs').all().map(row => row.pack_id))
+    return STYLE_PACKS.map(pack => ({
+      id: pack.id,
+      name: pack.name,
+      description: pack.description,
+      source: pack.source,
+      tags: pack.tags,
+      examples: pack.examples.length,
+      principles: pack.principles.length,
+      applied: applied.has(pack.id),
+    }))
+  }
+
+  /** Apply one or more style packs exactly once; existing user records are never replaced. */
+  applyStylePacks(packIds) {
+    const requested = stylePackIdList(packIds)
+    const byId = new Map(STYLE_PACKS.map(pack => [pack.id, pack]))
+    const existing = new Set(this.db.prepare('SELECT pack_id FROM applied_style_packs').all().map(row => row.pack_id))
+    const results = []
+    let changed = false
+
+    this.db.exec('BEGIN')
+    try {
+      const addPrinciple = this.db.prepare('INSERT OR IGNORE INTO principles (principle, category, tags) VALUES (?, ?, ?)')
+      const addExample = this.db.prepare('INSERT INTO taste (ref, verdict, reason, tags, source) VALUES (?, ?, ?, ?, ?)')
+      const markApplied = this.db.prepare('INSERT INTO applied_style_packs (pack_id) VALUES (?)')
+      for (const id of requested) {
+        const pack = byId.get(id)
+        if (pack === undefined) throw new Error(`palate: unknown style pack: ${id}`)
+        if (existing.has(id)) {
+          results.push({ id, name: pack.name, already_applied: true, examples_added: 0, principles_added: 0 })
+          continue
+        }
+        let principlesAdded = 0
+        for (const principle of pack.principles) {
+          const result = addPrinciple.run(principle.principle, principle.category, JSON.stringify(normalizeTags(principle.tags ?? pack.tags)))
+          principlesAdded += result.changes
+        }
+        for (const example of pack.examples) {
+          addExample.run(example.ref, example.verdict, example.reason, JSON.stringify(normalizeTags(example.tags ?? pack.tags)), example.source ?? pack.source)
+        }
+        markApplied.run(id)
+        existing.add(id)
+        changed = true
+        results.push({ id, name: pack.name, already_applied: false, examples_added: pack.examples.length, principles_added: principlesAdded })
+      }
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+
+    if (changed) this.writeMirrors()
+    return { packs: results, stats: this.stats() }
   }
 
   /** Persist the exact evidence supplied for a review, then give the caller an ID to close the loop later. */
   createReview(subject, { tag, limit = 12 } = {}) {
     if (typeof subject !== 'string' || subject.trim().length === 0) throw new Error('palate: review subject is required')
     const context = this.reviewContext(subject, { tag, limit })
-    const principles = this.listPrinciples().map(principle => principle.principle)
+    const principles = this.listPrinciples({ tag }).map(principle => principle.principle)
     const examples = context.relevant_examples.map(example => ({ ref: example.ref, verdict: example.verdict }))
     const res = this.db.prepare('INSERT INTO reviews (subject, tag, principles, examples) VALUES (?, ?, ?, ?)')
       .run(subject, typeof tag === 'string' && tag.length > 0 ? tag : null, JSON.stringify(principles), JSON.stringify(examples))
@@ -296,7 +466,7 @@ export class PalateStore {
   /** Per-principle adoption history from feedback, separate from raw evidence count. */
   listEffectiveness({ limit = 50 } = {}) {
     const rows = this.db.prepare(`
-      SELECT p.id, p.principle, p.category, p.evidence,
+        SELECT p.id, p.principle, p.category, p.tags, p.evidence,
         COUNT(i.principle) AS feedback,
         COALESCE(SUM(CASE WHEN i.verdict = 'accepted' THEN 1 ELSE 0 END), 0) AS accepted,
         COALESCE(SUM(CASE WHEN i.verdict = 'rejected' THEN 1 ELSE 0 END), 0) AS rejected
@@ -308,6 +478,7 @@ export class PalateStore {
     `).all(Math.max(1, Math.min(100, Number(limit) || 50)))
     return rows.map(row => ({
       ...row,
+      tags: safeParse(row.tags),
       acceptance_rate: row.feedback > 0 ? Math.round((row.accepted / row.feedback) * 100) : null,
     }))
   }
@@ -320,7 +491,8 @@ export class PalateStore {
   searchExamples(subject, { tag, limit = 12 } = {}) {
     const query = String(subject ?? '').normalize('NFKC').toLocaleLowerCase().trim()
     const queryTokens = tokensOf(query)
-    const examples = this.listExamples({ tag, limit: 1000 })
+    const normalizedTag = tag ? normalizeTag(tag, 'tag') : ''
+    const examples = this.listExamples({ tag: normalizedTag || undefined, limit: 1000 })
     const ranked = examples.map(example => {
       const text = searchableText(example)
       const exampleTokens = tokensOf(text)
@@ -328,10 +500,10 @@ export class PalateStore {
       const tagTerms = new Set((example.tags ?? []).flatMap(value => [...tokensOf(value)]))
       const score = terms.reduce((sum, token) => sum + (tagTerms.has(token) ? 3 : 1), 0)
         + (query.length >= 8 && text.includes(query) ? 4 : 0)
-        + (tag && example.tags.includes(tag) ? 2 : 0)
+        + (normalizedTag && example.tags.includes(normalizedTag) ? 2 : 0)
       return { ...example, score, matched_terms: terms.slice(0, 12) }
     })
-    const relevant = tag ? ranked : ranked.filter(example => example.score > 0)
+    const relevant = normalizedTag ? ranked : ranked.filter(example => example.score > 0)
     return relevant
       .sort((left, right) => right.score - left.score || right.id - left.id)
       .slice(0, Math.max(1, Math.min(50, Number(limit) || 12)))
@@ -342,7 +514,7 @@ export class PalateStore {
    * accumulated knowledge; the model renders the critique grounded in it.
    */
   reviewContext(subject, { tag, limit = 12 } = {}) {
-    const principles = this.listPrinciples().map(p => `[${p.category}] ${p.principle} (evidence ${p.evidence})`)
+    const principles = this.listPrinciples({ tag }).map(p => `[${p.category}] ${p.principle} (evidence ${p.evidence})`)
     const relevant = this.searchExamples(subject, { tag, limit }).map(e => ({
       ref: e.ref, verdict: e.verdict, reason: e.reason, tags: e.tags,
       score: e.score, matched_terms: e.matched_terms,
@@ -370,7 +542,7 @@ export class PalateStore {
 
     const ps = this.listPrinciples()
     const plines = ['# principles.md — dsh-palate codified taste', '', '<!-- Read-only mirror of the principles. -->', '']
-    for (const p of ps) plines.push(`- [${p.category}] ${p.principle} _(evidence ${p.evidence})_`)
+    for (const p of ps) plines.push(`- [${p.category}] ${p.principle} _(evidence ${p.evidence})_${p.tags.length ? ` · tags: ${p.tags.join(', ')}` : ''}`)
     writeFileSync(join(this.dir, 'principles.md'), plines.join('\n'))
 
     const effectiveness = this.listEffectiveness().filter(item => item.feedback > 0)
@@ -401,6 +573,38 @@ function stringList(values, name) {
     }
     const principle = value.trim()
     if (!output.includes(principle)) output.push(principle)
+  }
+  return output
+}
+
+function normalizeTag(value, name = 'tag') {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > 80) {
+    throw new Error(`palate: ${name} must be a non-empty string up to 80 characters`)
+  }
+  return value.trim().normalize('NFKC').toLocaleLowerCase()
+}
+
+function normalizeTags(values, name = 'tags') {
+  if (!Array.isArray(values)) throw new Error(`palate: ${name} must be an array`)
+  if (values.length > 30) throw new Error(`palate: ${name} accepts at most 30 tags`)
+  const output = []
+  for (const value of values) {
+    const tag = normalizeTag(value, name)
+    if (!output.includes(tag)) output.push(tag)
+  }
+  return output
+}
+
+function stylePackIdList(values) {
+  if (!Array.isArray(values) || values.length === 0) throw new Error('palate: pack_ids must be a non-empty array')
+  if (values.length > STYLE_PACKS.length) throw new Error(`palate: pack_ids accepts at most ${STYLE_PACKS.length} packs`)
+  const output = []
+  for (const value of values) {
+    if (typeof value !== 'string' || value.trim().length === 0 || value.length > 100) {
+      throw new Error('palate: pack_ids must contain non-empty style-pack IDs')
+    }
+    const id = value.trim().toLocaleLowerCase()
+    if (!output.includes(id)) output.push(id)
   }
   return output
 }

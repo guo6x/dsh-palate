@@ -7,7 +7,8 @@
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PalateStore, SEED_EXAMPLES, SEED_PRINCIPLES } from '../src/store.js'
+import { DatabaseSync } from 'node:sqlite'
+import { PalateStore, SEED_EXAMPLES, SEED_PRINCIPLES, STYLE_PACKS } from '../src/store.js'
 
 let failed = 0
 const check = (label, cond, extra = '') => {
@@ -105,11 +106,68 @@ try {
   const feedbackMd = readFileSync(join(dir, 'feedback.md'), 'utf8')
   check('mirror: feedback.md lists effectiveness', feedbackMd.includes(target) && feedbackMd.includes('1 accepted / 0 rejected'))
 
+  // Style packs remain opt-in, add auditable records once, and keep tagged taste isolated.
+  const packsBefore = store.listStylePacks()
+  check('packs: references are available but not auto-applied', packsBefore.length === STYLE_PACKS.length && packsBefore.every(pack => !pack.applied))
+  const beforePacks = store.stats()
+  const applied = store.applyStylePacks(['apple-product-storytelling', 'x-direct-utility'])
+  const styleExamples = STYLE_PACKS.reduce((sum, pack) => sum + pack.examples.length, 0)
+  const stylePrinciples = STYLE_PACKS.reduce((sum, pack) => sum + pack.principles.length, 0)
+  check('packs: applies Apple and X references once', applied.packs.length === 2 && applied.packs.every(pack => !pack.already_applied))
+  check('packs: records the expected corpus growth', applied.stats.examples === beforePacks.examples + styleExamples && applied.stats.principles === beforePacks.principles + stylePrinciples && applied.stats.style_packs === 2, JSON.stringify(applied.stats))
+  const appleExamples = store.listExamples({ tag: 'apple' })
+  const applePrinciples = store.listPrinciples({ tag: 'apple' })
+  const appleRule = STYLE_PACKS.find(pack => pack.id === 'apple-product-storytelling').principles[0].principle
+  const xRule = STYLE_PACKS.find(pack => pack.id === 'x-direct-utility').principles[0].principle
+  check('packs: Apple tag retrieves only Apple examples', appleExamples.length === 5 && appleExamples.every(example => example.tags.includes('apple')))
+  check('packs: Apple tag keeps universal rules and excludes X-specific rules', applePrinciples.some(principle => principle.principle === appleRule) && !applePrinciples.some(principle => principle.principle === xRule))
+  const appleReview = store.reviewContext('A cinematic product launch page with a single product and one action.', { tag: 'apple' })
+  check('packs: Apple review carries Apple evidence, not X evidence', appleReview.relevant_examples.length === 5 && appleReview.principles.some(principle => principle.includes(appleRule)) && !appleReview.principles.some(principle => principle.includes(xRule)))
+  const beforeReapply = store.stats()
+  const reapply = store.applyStylePacks(['apple-product-storytelling'])
+  check('packs: reapplying is idempotent', reapply.packs[0]?.already_applied === true && reapply.stats.examples === beforeReapply.examples && reapply.stats.principles === beforeReapply.principles)
+  let unknownPack = false
+  try { store.applyStylePacks(['not-a-real-pack']) } catch { unknownPack = true }
+  check('packs: rejects unknown pack IDs', unknownPack)
+  const styleTasteMd = readFileSync(join(dir, 'taste.md'), 'utf8')
+  const stylePrinciplesMd = readFileSync(join(dir, 'principles.md'), 'utf8')
+  check('packs: mirrors expose source examples and tags', styleTasteMd.includes('Apple reference: single-subject launch hero') && stylePrinciplesMd.includes('tags: apple, product-storytelling'))
+
   const examplesBeforeReopen = store.stats().examples
   store.close()
   const reopened = new PalateStore(dir)
   check('seed: reopening does not duplicate examples', reopened.stats().examples === examplesBeforeReopen)
   reopened.close()
+
+  // Existing palates from before tagged principles must migrate without losing records.
+  const legacyDir = mkdtempSync(join(tmpdir(), 'dsh-palate-legacy-'))
+  const legacyDb = new DatabaseSync(join(legacyDir, 'palate.db'))
+  legacyDb.exec(`
+    CREATE TABLE taste (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ref TEXT NOT NULL,
+      verdict TEXT NOT NULL,
+      reason TEXT,
+      tags TEXT,
+      source TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE principles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      principle TEXT NOT NULL UNIQUE,
+      category TEXT,
+      evidence INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO taste (ref, verdict, reason, tags, source) VALUES ('legacy user example', 'good', 'kept through migration', '["legacy"]', 'user');
+    INSERT INTO principles (principle, category) VALUES ('Legacy user principle stays intact.', 'legacy');
+  `)
+  legacyDb.close()
+  const migrated = new PalateStore(legacyDir)
+  const legacyPrinciple = migrated.listPrinciples().find(principle => principle.principle === 'Legacy user principle stays intact.')
+  const migratedPack = migrated.applyStylePacks(['apple-product-storytelling'])
+  check('migration: adds tagged-principle support without replacing old taste', legacyPrinciple?.tags.length === 0 && migrated.listExamples({ tag: 'legacy' }).some(example => example.ref === 'legacy user example') && migratedPack.stats.style_packs === 1)
+  migrated.close()
 } catch (error) {
   failed++
   console.error('FATAL', error)

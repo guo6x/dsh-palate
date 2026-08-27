@@ -13,6 +13,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const expectedTools = new Set([
+  'palate_packs',
+  'palate_seed',
   'palate_review',
   'palate_feedback',
   'palate_add',
@@ -99,7 +101,7 @@ try {
 
   apply(makeContext())
 
-  check('registers exactly the eight documented tools', registeredTools.size === expectedTools.size && [...expectedTools].every(name => registeredTools.has(name)))
+  check('registers exactly the ten documented tools', registeredTools.size === expectedTools.size && [...expectedTools].every(name => registeredTools.has(name)))
   check('all tools expose a DSH-compatible definition', [...registeredTools.values()].every(definition => (
     typeof definition.description === 'string'
     && definition.timeoutMs === 30000
@@ -112,13 +114,20 @@ try {
   const initialStats = await tool('palate_stats').execute({})
   check('starter palate includes examples for first review', initialStats.examples === 4 && initialStats.principles === 12)
 
+  const packs = await tool('palate_packs').execute({})
+  check('palate_packs lists opt-in visual references', packs.packs.length === 2 && packs.packs.every(pack => !pack.applied))
+  const seeded = await tool('palate_seed').execute({ pack_ids: ['apple-product-storytelling', 'x-direct-utility'] })
+  check('palate_seed applies both visual references once', seeded.packs.length === 2 && seeded.packs.every(pack => !pack.already_applied) && seeded.stats.examples === 14 && seeded.stats.principles === 22 && seeded.stats.style_packs === 2)
+  const applePrinciples = await tool('palate_principles').execute({ tag: 'apple' })
+  check('tagged principles keep Apple reference separate from X', applePrinciples.principles.some(principle => principle.tags.includes('apple')) && !applePrinciples.principles.some(principle => principle.tags.includes('x')))
+
   const added = await tool('palate_add').execute({
     ref: 'product dashboard',
     verdict: 'good',
     reason: 'Clear hierarchy and purposeful spacing.',
     tags: ['dashboard'],
   })
-  check('palate_add executes through its host definition', added.id >= 1 && added.stats.examples === 5)
+  check('palate_add executes through its host definition', added.id >= 1 && added.stats.examples === 15)
 
   const learnedText = 'Keep dense dashboards scannable with a stable visual hierarchy.'
   const learned = await tool('palate_learn').execute({ principle: learnedText, category: 'hierarchy' })
@@ -147,13 +156,15 @@ try {
   check('palate_effectiveness reports the recorded outcome', effectiveness.principles.some(principle => principle.principle === learnedText && principle.accepted === 1 && principle.acceptance_rate === 100))
 
   const stats = await tool('palate_stats').execute({})
-  check('palate_stats reports the complete host call chain', stats.examples === 5 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1)
+  check('palate_stats reports the complete host call chain', stats.examples === 15 && stats.principles === 23 && stats.style_packs === 2 && stats.reviews === 1 && stats.feedback === 1 && stats.helpful === 1)
 
   const route = registeredRoutes[0]
   const local = await request(route, '/palate/effectiveness', '127.0.0.1')
   check('loopback effectiveness API returns JSON', local.status === 200 && local.headers['content-type'].startsWith('application/json') && local.body.some(principle => principle.principle === learnedText && principle.accepted === 1))
   const reviews = await request(route, '/palate/reviews', '127.0.0.1')
   check('loopback reviews API exposes evidence refs', reviews.status === 200 && reviews.body[0]?.relevant_examples.length === 1 && reviews.body[0].relevant_examples[0].ref === 'product dashboard')
+  const routePacks = await request(route, '/palate/packs', '127.0.0.1')
+  check('loopback packs API reports applied references', routePacks.status === 200 && routePacks.body.length === 2 && routePacks.body.every(pack => pack.applied))
   const remote = await request(route, '/palate/effectiveness', '203.0.113.10')
   check('loopback API rejects remote requests', remote.status === 403 && remote.body.error === 'loopback only')
 } finally {

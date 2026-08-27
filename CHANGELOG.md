@@ -2,6 +2,15 @@
 
 All notable changes to dsh-palate.
 
+## [0.5.0] - 2026-08-27
+
+### Added
+
+- Two opt-in, auditable visual-reference packs: Apple-inspired product storytelling and X-inspired direct utility. They distill public-page observations into abstract principles and examples without shipping brand assets, copy, or imitation templates.
+- `palate_packs` to inspect available packs and `palate_seed` to apply one or more packs exactly once without replacing an existing palate.
+- Style tags now filter both examples and style-specific principles in `palate_review`, so `apple` and `x` references cannot bleed into each other while universal rules remain available.
+- A tagged-principle migration check, pack API, and panel visibility for applied reference packs.
+
 ## [0.4.3] - 2026-08-26
 
 ### Fixed

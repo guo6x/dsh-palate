@@ -23,6 +23,8 @@ Taste is not a gift — it's **pattern recognition built from exposure**. See en
 | `palate_feedback` | Use a `review_id` to record whether a critique helped and which principles were accepted or rejected; only accepted principles gain evidence |
 | `palate_add` | Feed an example (`good`/`bad`/`note` + reason + tags) into the corpus — grows the palate |
 | `palate_learn` | Distill a new principle from experience and add it to the codified taste |
+| `palate_packs` | Inspect opt-in visual-reference packs and whether they are already applied |
+| `palate_seed` | Apply one or more visual-reference packs exactly once, without overwriting existing taste |
 | `palate_list` | Browse the accumulated corpus |
 | `palate_principles` | List the codified principles, ordered by evidence |
 | `palate_effectiveness` | See which principles were accepted or rejected in real review feedback |
@@ -31,6 +33,19 @@ Taste is not a gift — it's **pattern recognition built from exposure**. See en
 Ships with a **starter palate** of 12 foundational principles plus four transparent teaching examples (good and bad dashboards, a readable table, and generic landing-page boilerplate), so the first review has concrete evidence — then it grows from there.
 
 The four starter examples are inserted only when the local taste database is empty. Installing or upgrading the plugin never overwrites an existing palate.
+
+## Visual reference packs: Apple and X
+
+`dsh-palate` also ships two **opt-in** visual-reference packs:
+
+- `apple-product-storytelling` — one product subject per viewport, proof-led imagery, restrained CTA choices, and a calm sequence of mini-campaigns.
+- `x-direct-utility` — high-contrast identity, a decisive primary route, ranked secondary actions, and almost invisible supporting detail.
+
+They are transparent abstractions of public pages observed on 2026-08-27, not scraped assets, brand copy, or templates to imitate. Start by calling `palate_packs`, then explicitly apply one or both with `palate_seed`. Use `tag: "apple"` or `tag: "x"` in `palate_review`: the tag filters **both** matching examples and style-scoped principles, while universal principles remain available.
+
+For example, ask an agent:
+
+> Inspect `palate_packs`, then apply `apple-product-storytelling` and `x-direct-utility` with `palate_seed`. Review our product-launch page with tag `apple`, and separately review our sign-in entry flow with tag `x`. Cite the evidence; do not copy either brand’s assets, copy, or identity.
 
 ## How it works
 
@@ -95,3 +110,4 @@ MIT licensed. Ideas and examples welcome — open an issue.
 - **Feedback is explicit** — the plugin does not guess whether a user adopted a recommendation; call `palate_feedback` after a review to form effectiveness data.
 - **Markdown mirrors are read-only exports** for v0.1 (human edit-and-merge-back is planned).
 - **Vision is delegated** — pair with a vision tool to review screenshots.
+- **Reference packs are not cloning kits** — they preserve observable layout and hierarchy lessons, not protected assets, copy, or a promise that every page from a referenced brand is appropriate for every product.
