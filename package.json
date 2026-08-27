@@ -1,6 +1,6 @@
 {
   "name": "dsh-palate",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "An eye that grows: accumulated design taste for DSH agents. A taste corpus + codified principles that sharpen with every example you feed — review designs against learned judgment, not a fixed ruler.",
   "type": "module",
   "main": "lib/index.js",

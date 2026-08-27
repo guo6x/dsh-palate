@@ -620,6 +620,9 @@ export class PalateStore {
 
   trainingCandidate(row) {
     const payload = safeObject(row.payload)
+    const sessionContext = {}
+    if (typeof row.session_subject === 'string') sessionContext.session_subject = row.session_subject
+    if (typeof row.session_source === 'string') sessionContext.session_source = row.session_source
     return {
       ...payload,
       candidate_id: Number(row.id),
@@ -629,8 +632,7 @@ export class PalateStore {
       decision_note: row.decision_note,
       created_at: row.created_at,
       decided_at: row.decided_at,
-      session_subject: row.session_subject,
-      session_source: row.session_source,
+      ...sessionContext,
     }
   }
 

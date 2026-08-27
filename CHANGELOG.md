@@ -2,6 +2,12 @@
 
 All notable changes to dsh-palate.
 
+## [0.6.1] - 2026-08-27
+
+### Fixed
+
+- Omit absent session-context fields from staged training candidates, so `palate_intake` returns lossless JSON to the real DSH host instead of staging successfully and then failing output validation.
+
 ## [0.6.0] - 2026-08-27
 
 ### Added

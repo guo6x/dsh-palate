@@ -44,6 +44,15 @@ function check(label, condition) {
   }
 }
 
+function isLosslessJson(value) {
+  try {
+    assert.deepEqual(value, JSON.parse(JSON.stringify(value)))
+    return true
+  } catch {
+    return false
+  }
+}
+
 function makeContext() {
   return {
     tools: {
@@ -162,6 +171,7 @@ try {
   })
   const stagedStats = await tool('palate_stats').execute({})
   check('palate_intake stages candidates without changing learned taste', intake.candidates.length === 2 && intake.candidates.every(candidate => candidate.status === 'pending') && intake.comparisons[0]?.scope === 'active_palate' && stagedStats.examples === 15 && stagedStats.principles === 23)
+  check('palate_intake returns lossless JSON to the real host', isLosslessJson(intake))
   const queued = await tool('palate_candidates').execute({ status: 'pending' })
   check('palate_candidates exposes pending session evidence', queued.candidates.length === 2 && queued.candidates.every(candidate => candidate.session_id === intake.session_id) && queued.training.stats.pending === 2)
   const decided = await tool('palate_decide').execute({ candidate_ids: intake.candidates.map(candidate => candidate.candidate_id), decision: 'accept', note: 'Both candidates are explicitly confirmed.' })
