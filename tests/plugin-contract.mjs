@@ -103,8 +103,10 @@ function tool(name) {
 }
 
 const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+const pluginManifest = JSON.parse(readFileSync(new URL('../dsh.plugin.json', import.meta.url), 'utf8'))
 check('package does not require a blocked Git-install lifecycle build', packageJson.scripts?.prepare === undefined)
 check('package ships both loader entrypoints', existsSync(new URL('../lib/index.js', import.meta.url)) && existsSync(new URL('../lib/client.js', import.meta.url)))
+check('package and plugin manifest versions stay aligned', packageJson.version === pluginManifest.version && packageJson.engines?.node === '>=22')
 
 try {
   process.env.DSH_HOME = home

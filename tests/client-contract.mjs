@@ -15,6 +15,10 @@ assert.match(source, /top: 'calc\(4\.5rem \+ 390px\)'/)
 assert.match(source, /maxHeight: 'calc\(100vh - 7rem\)'/)
 assert.match(source, /getJson\('\/palate\/packs'\)/)
 assert.match(source, /getJson\('\/palate\/training'\)/)
+assert.match(source, /本地品味库已就绪/)
+assert.match(source, /首个成功体验/)
+assert.match(source, /navigator\.clipboard/)
+assert.match(source, /'aria-live': 'polite'/)
 
 let entry
 globalThis.window = {

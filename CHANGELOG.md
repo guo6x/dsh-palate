@@ -2,6 +2,14 @@
 
 All notable changes to dsh-palate.
 
+## [0.6.2] - 2026-08-30
+
+### Added
+
+- Add a keyless `pnpm demo` that exercises the shipped host bundle, local palate, retrieval, and Web route without a model or API key.
+- Add a first-run card to the Web panel with an explicit local-readiness state and a copyable review prompt, so plugin installation and provider authentication are easy to distinguish.
+- Document the first-run demo, expected Web signals, and a failure matrix in English and Chinese.
+
 ## [0.6.1] - 2026-08-27
 
 ### Fixed

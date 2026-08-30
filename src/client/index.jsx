@@ -24,11 +24,29 @@ const statStyle = { display: 'flex', gap: 8, padding: '8px 10px', fontSize: 12 }
 const chipStyle = { background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: '6px 10px', textAlign: 'center', flex: 1 }
 const bigStyle = { fontSize: 18, fontWeight: 700 }
 const listStyle = { padding: '0 10px 10px', fontSize: 11, lineHeight: 1.5, opacity: 0.85, maxHeight: 150, overflow: 'auto' }
+const statusStyle = { margin: '0 10px 8px', padding: '6px 8px', borderRadius: 7, fontSize: 11, background: 'rgba(127,212,138,0.12)', color: '#a9e5b0' }
+const onboardingStyle = { margin: '0 10px 10px', padding: 9, borderRadius: 8, background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', fontSize: 11, lineHeight: 1.45 }
+const promptStyle = { margin: '7px 0', padding: 7, borderRadius: 6, background: 'rgba(0,0,0,0.22)', color: '#f2edf4', userSelect: 'text', whiteSpace: 'normal' }
+const FIRST_RUN_PROMPT = '调用 palate_stats，然后用 palate_review 评审“一个有 12 张等权 KPI 卡、一个主要营收指标和一张小趋势图的分析仪表盘”。告诉我用了哪些已存原则和案例，并返回 review_id。'
 
 async function getJson(path) {
-  const res = await fetch(path, { cache: 'no-store' })
-  if (!res.ok) return null
-  return res.json()
+  try {
+    const res = await fetch(path, { cache: 'no-store' })
+    if (!res.ok) return null
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
+async function copyText(value) {
+  if (typeof navigator === 'undefined' || typeof navigator.clipboard?.writeText !== 'function') return false
+  try {
+    await navigator.clipboard.writeText(value)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function PalatePanel() {
@@ -41,6 +59,8 @@ function PalatePanel() {
   const [packs, setPacks] = useState([])
   const [training, setTraining] = useState(null)
   const [pos, setPos] = useState({ x: null, y: null })
+  const [loadState, setLoadState] = useState('loading')
+  const [promptState, setPromptState] = useState('idle')
 
   useEffect(() => {
     let alive = true
@@ -50,7 +70,12 @@ function PalatePanel() {
         getJson('/palate/recent'), getJson('/palate/reviews'), getJson('/palate/packs'), getJson('/palate/training'),
       ])
       if (!alive) return
-      if (s) setStats(s)
+      if (s) {
+        setStats(s)
+        setLoadState('ready')
+      } else {
+        setLoadState('error')
+      }
       if (Array.isArray(p)) setPrinciples(p)
       if (Array.isArray(e)) setEffectiveness(e)
       if (Array.isArray(r)) setRecent(r)
@@ -83,6 +108,25 @@ function PalatePanel() {
       React.createElement('span', { style: { flex: 1, fontSize: 11, opacity: 0.6 } }, '会长大的眼'),
       React.createElement('button', { style: btnStyle, onClick: () => closePanel(), title: '收起' }, '×'),
     ),
+    React.createElement('div', { style: { ...statusStyle, ...(loadState === 'error' ? { background: 'rgba(224,138,138,0.13)', color: '#f0b0b0' } : {}) }, role: 'status', 'aria-live': 'polite' },
+      loadState === 'loading'
+        ? '正在读取本地品味库…'
+        : loadState === 'ready'
+          ? '● 本地品味库已就绪 · 自动同步'
+          : '⚠️ 读不到本地面板数据 · 请重启 dsh web 后再试'),
+    loadState === 'ready' && stats && (stats.reviews ?? 0) === 0
+      ? React.createElement('div', { style: onboardingStyle },
+          React.createElement('div', { style: { fontWeight: 700 } }, '首个成功体验'),
+          React.createElement('div', { style: { opacity: 0.75 } }, '在新对话运行一次评审，确认插件、存储和面板都已接通。'),
+          React.createElement('div', { style: promptStyle }, FIRST_RUN_PROMPT),
+          React.createElement('button', {
+            style: btnStyle,
+            onPointerDown: event => event.stopPropagation(),
+            onClick: async () => setPromptState(await copyText(FIRST_RUN_PROMPT) ? 'copied' : 'unavailable'),
+            title: '复制首个演示提示词',
+          }, promptState === 'copied' ? '已复制提示词' : promptState === 'unavailable' ? '请从文档复制' : '复制首个提示词'),
+        )
+      : null,
     stats
       ? React.createElement('div', { style: statStyle },
           React.createElement('div', { style: chipStyle },
@@ -149,6 +193,7 @@ function PalateButton() {
   const open = useModuleOpen()
   return React.createElement('button', {
     title: '品味面板',
+    'aria-label': '品味面板',
     style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: 4 },
     onClick: () => setModuleOpen(!open),
   }, open ? '🍷' : '👁️')

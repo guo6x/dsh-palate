@@ -123,6 +123,8 @@ Use this short path to verify the install before teaching the palate:
 
 This proves the plugin path — host discovery, local storage, retrieval, and Web rendering. The plugin does not make a remote model request itself, but the chat response does depend on the selected Harness provider. If the response reports an authentication error, verify the 👁️ panel and local counters first; the plugin can be installed correctly while the model credential is invalid. To see the corpus grow, follow the 90-second loop below and add `palate_feedback` only after you have actually judged the recommendation.
 
+For a copyable keyless transcript, Web-panel success signals, and a failure matrix, see the [first-run demo](docs/first-run-demo.md).
+
 ## See the learning loop in 90 seconds
 
 Start a new chat and paste this safe, local-first task:

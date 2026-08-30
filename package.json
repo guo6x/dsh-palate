@@ -1,6 +1,6 @@
 {
   "name": "dsh-palate",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "An eye that grows: accumulated design taste for DSH agents. A taste corpus + codified principles that sharpen with every example you feed — review designs against learned judgment, not a fixed ruler.",
   "type": "module",
   "main": "lib/index.js",
@@ -12,9 +12,14 @@
   "files": [
     "lib",
     "src",
+    "demo",
+    "docs",
     "cordis.patch.yml",
     "dsh.plugin.json"
   ],
+  "engines": {
+    "node": ">=22"
+  },
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
@@ -24,7 +29,8 @@
   },
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs && node tests/smoke.mjs && node tests/plugin-contract.mjs && node tests/client-contract.mjs"
+    "demo": "node build.mjs && node demo/first-run.mjs",
+    "test": "node build.mjs && node tests/smoke.mjs && node tests/plugin-contract.mjs && node tests/client-contract.mjs && node demo/first-run.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
@@ -37,7 +43,10 @@
     "taste",
     "aesthetic",
     "review",
-    "critique"
+    "critique",
+    "visual-training",
+    "reference-packs",
+    "ux"
   ],
   "license": "MIT",
   "repository": {

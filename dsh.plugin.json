@@ -1,7 +1,7 @@
 {
   "name": "dsh-palate",
-  "description": "Accumulated design taste for DSH agents: a growing taste corpus + codified principles.",
-  "version": "0.6.1",
+  "description": "Design review that grows: 13 local, auditable taste tools, a visual training desk, Apple/X reference packs, and a Web panel.",
+  "version": "0.6.2",
   "entry": {
     "name": "dsh-palate",
     "inject": []
