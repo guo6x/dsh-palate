@@ -110,6 +110,19 @@ Requirements: the DeepSeek Harness web profile and Node ≥ 22. The plugin uses 
 
 Developing from a checkout instead? Run `dsh plugin --profile web add .` from the repository directory. The repository commits the `lib/` entrypoints, so GitHub and path installs can start immediately without running an install-time build script.
 
+## First-run proof in 60 seconds
+
+Use this short path to verify the install before teaching the palate:
+
+1. Install with the command above, restart `dsh web`, and open a new chat.
+2. Paste this prompt:
+
+   > Call `palate_stats`, then use `palate_review` to critique “a dashboard with twelve equal KPI cards, one primary revenue metric, and a small trend chart”. Tell me which stored principles and examples you used, and return the `review_id`.
+
+3. Confirm the response contains the starter principles, grounded evidence, and a `review_id`. Open the 👁️ panel: the review should also appear there.
+
+This proves the complete useful path — host discovery, local storage, retrieval, and Web rendering — without an account, API key, screenshot upload, or remote service. To see the corpus grow, follow the 90-second loop below and add `palate_feedback` only after you have actually judged the recommendation.
+
 ## See the learning loop in 90 seconds
 
 Start a new chat and paste this safe, local-first task:
