@@ -106,7 +106,7 @@ dsh plugin --profile web add github:guo6x/dsh-palate
 
 Restart a running `dsh web` process, then refresh the page. **Installation is complete when a 👁️ button appears at the bottom of the sidebar.** Click it to see the starter palate, its principles, feedback history, and any staged training candidates.
 
-Requirements: the DeepSeek Harness web profile and Node ≥ 22. The plugin uses only local SQLite storage — no account, API key, or embedding service is required.
+Requirements: the DeepSeek Harness web profile and Node ≥ 22. The plugin itself uses only local SQLite storage — it does not need an account, API key, or embedding service. The natural-language chat demo still uses the model configured in Harness, so that provider must have a valid credential.
 
 Developing from a checkout instead? Run `dsh plugin --profile web add .` from the repository directory. The repository commits the `lib/` entrypoints, so GitHub and path installs can start immediately without running an install-time build script.
 
@@ -114,14 +114,14 @@ Developing from a checkout instead? Run `dsh plugin --profile web add .` from th
 
 Use this short path to verify the install before teaching the palate:
 
-1. Install with the command above, restart `dsh web`, and open a new chat.
-2. Paste this prompt:
+1. Install with the command above, restart `dsh web`, and open a new chat. If the composer asks for a workspace, click **Choose workspace**, select or create one, and continue the one-time notice if it appears.
+2. Make sure the selected Harness model has a valid provider credential, then paste this prompt:
 
    > Call `palate_stats`, then use `palate_review` to critique “a dashboard with twelve equal KPI cards, one primary revenue metric, and a small trend chart”. Tell me which stored principles and examples you used, and return the `review_id`.
 
 3. Confirm the response contains the starter principles, grounded evidence, and a `review_id`. Open the 👁️ panel: the review should also appear there.
 
-This proves the complete useful path — host discovery, local storage, retrieval, and Web rendering — without an account, API key, screenshot upload, or remote service. To see the corpus grow, follow the 90-second loop below and add `palate_feedback` only after you have actually judged the recommendation.
+This proves the plugin path — host discovery, local storage, retrieval, and Web rendering. The plugin does not make a remote model request itself, but the chat response does depend on the selected Harness provider. If the response reports an authentication error, verify the 👁️ panel and local counters first; the plugin can be installed correctly while the model credential is invalid. To see the corpus grow, follow the 90-second loop below and add `palate_feedback` only after you have actually judged the recommendation.
 
 ## See the learning loop in 90 seconds
 
